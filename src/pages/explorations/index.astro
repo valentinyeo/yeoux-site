@@ -1,0 +1,12 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import ItemTable from '../../components/ItemTable.astro';
+import { SECTIONS, indexItems, listAll } from '../../lib/content.mjs';
+
+const { prefix, title, blurb } = SECTIONS.explorations;
+const items = indexItems(await listAll(env.CONTENT, prefix), prefix);
+---
+<Base active="/explorations" title={title} subtitle={`${items.length} items. ${blurb}`}>
+  <ItemTable items={items} section="explorations" />
+</Base>
