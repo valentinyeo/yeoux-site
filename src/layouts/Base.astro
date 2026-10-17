@@ -1,0 +1,29 @@
+---
+import '../styles/global.css';
+import { siteNavigation } from '../lib/siteNavigation.mjs';
+import themeInit from '../../public/theme/v1/init.js?raw';
+
+const { active = '/', title = 'Yeo UX', subtitle = '' } = Astro.props;
+---
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{title === 'Yeo UX' ? title : `Yeo UX · ${title}`}</title>
+    <link rel="preload" href="/theme/v1/manrope-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <script is:inline set:html={themeInit} />
+    <link rel="stylesheet" href="/theme/v1/theme.css">
+    <script is:inline src="/theme/v1/theme.js" defer></script>
+  </head>
+  <body class="min-h-screen bg-base-100 text-base-content">
+    <div class="mx-auto max-w-5xl px-4 py-6 pb-16 sm:px-6 lg:px-8">
+      <Fragment set:html={siteNavigation(active)} />
+      <header class="mb-5">
+        <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+        {subtitle && <p class="mt-2 text-sm leading-6 text-base-content/60">{subtitle}</p>}
+      </header>
+      <slot />
+    </div>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import ItemTable from '../components/ItemTable.astro';
+import { SECTIONS, indexItems, listAll } from '../lib/content.mjs';
+
+const sections = await Promise.all(Object.entries(SECTIONS).map(async ([key, section]) => ({
+  key,
+  ...section,
+  items: indexItems(await listAll(env.CONTENT, section.prefix), section.prefix),
+})));
+---
+<Base active="/" title="Yeo UX" subtitle="Explorations and reports for every Yeo UX project. Only you can open this site.">
+  {sections.map(section => (
+    <section class="mb-10">
+      <div class="mb-3 flex items-baseline justify-between gap-4">
+        <h2 class="text-lg font-semibold">{section.title}</h2>
+        <a class="link link-hover text-sm" href={`/${section.key}`}>All {section.items.length}</a>
+      </div>
+      <ItemTable items={section.items.slice(0, 8)} section={section.key} />
+    </section>
+  ))}
+</Base>

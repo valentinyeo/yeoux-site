@@ -1,0 +1,21 @@
+name = "yeoux-site"
+main = "@astrojs/cloudflare/entrypoints/server"
+account_id = "7865043d9ae730882b77f3d5d670c158"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[vars]
+YESI_1_REDIRECTS = "1"
+
+[assets]
+binding = "ASSETS"
+directory = "./dist"
+
+[[routes]]
+pattern = "yeoux.net/*"
+zone_name = "yeoux.net"
+
+[[r2_buckets]]
+binding = "CONTENT"
+bucket_name = "yeoux-site-content"

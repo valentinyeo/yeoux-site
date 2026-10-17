@@ -1,0 +1,23 @@
+---
+const { items, section, empty = 'Nothing here yet.' } = Astro.props;
+---
+{items.length ? (
+  <div class="overflow-x-auto rounded-box border border-base-300">
+    <table class="table table-sm">
+      <thead>
+        <tr><th>Title</th><th>Project</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        {items.map(item => (
+          <tr>
+            <td><a class="link link-hover font-medium" href={`/${section}/${item.slug}`}>{item.title}</a></td>
+            <td class="whitespace-nowrap text-base-content/60">{item.project}</td>
+            <td class="whitespace-nowrap text-base-content/60">{item.date}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+) : (
+  <div class="rounded-box border border-dashed border-base-300 p-8 text-center text-sm text-base-content/60">{empty}</div>
+)}

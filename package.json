@@ -1,0 +1,24 @@
+{
+  "name": "yeoux-site",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "test": "node --test test/*.test.mjs tools/*.test.cjs",
+    "check": "node tools/strip-comments.mjs --check . && node tools/no-hypertask.mjs && npm test",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.1.1",
+    "astro": "^7.0.6",
+    "parse5": "^8.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.2",
+    "daisyui": "^5.6.13",
+    "tailwindcss": "^4.3.2",
+    "wrangler": "^4.125.0"
+  }
+}
