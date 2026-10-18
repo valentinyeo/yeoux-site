@@ -6,7 +6,8 @@ import path from 'node:path';
 import { contentType, legacySlug } from '../src/lib/content.mjs';
 
 export const KEY_ITEM = 'Yeoux Site Share';
-export const KEY_FIELDS = ['SHARE_TOKEN', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET'];
+export const ACCESS_KEY_ITEM = 'Yeoux Site Access Gates';
+export const KEY_FIELDS = ['CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET'];
 
 export const HELP = `Usage: yeoshare [--report] [--project <name>] [--title <text>] [--date YYYY-MM-DD] <file>
 
@@ -15,7 +16,7 @@ Explorations land on https://yeoux.net/explorations, reports (--report) on https
 Both indexes list newest first and build themselves from the type, project and date of each upload.
 The same file path always gets the same URL, so running it again updates the page in place.
 --project defaults to the name of the git repo holding the file. --date defaults to today.
-Keys come from 1Password through yeo-key (item "${KEY_ITEM}"), never from a file.
+Keys come from 1Password through yeo-key (items "${KEY_ITEM}" and "${ACCESS_KEY_ITEM}"), never from a file.
 Only Yeo UX material goes here. Hypertask material goes to hypertask.app. Never upload secrets or infra docs.`;
 
 export function parseArgs(argv) {
@@ -50,9 +51,10 @@ function repoName(file) {
   }
 }
 
-function readKeys() {
-  const out = execFileSync('yeo-key', [KEY_ITEM, ...KEY_FIELDS], { encoding: 'utf8' });
-  return Object.fromEntries(out.trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+export function readKeys(read = args => execFileSync('yeo-key', args, { encoding: 'utf8' })) {
+  const share = read([KEY_ITEM, 'SHARE_TOKEN']).trim();
+  const out = read([ACCESS_KEY_ITEM, ...KEY_FIELDS]);
+  return { SHARE_TOKEN: share, ...Object.fromEntries(out.trim().split('\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)])) };
 }
 
 async function main() {

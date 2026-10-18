@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { findForbidden } from '../tools/no-hypertask.mjs';
 import { listBucket, planMigration } from '../tools/migrate.mjs';
 
@@ -39,4 +40,10 @@ test('bucket listing follows the cursor to the end', async () => {
   const fake = async url => { urls.push(url); return { json: async () => pages.shift() }; };
   assert.deepEqual((await listBucket('old', 't', fake)).map(o => o.key), ['a', 'b']);
   assert.match(urls[1], /cursor=c1/);
+});
+
+test('both the hub and legacy admin host route to this Worker', () => {
+  const config = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  assert.match(config, /pattern = "yeoux\.net\/\*"/);
+  assert.match(config, /pattern = "admin\.yeoux\.net\/\*"/);
 });
