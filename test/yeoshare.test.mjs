@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { accessSync, constants, readFileSync } from 'node:fs';
 import { HELP, parseArgs, readKeys, slugFor } from '../bin/yeoshare.mjs';
 import { isValidSlug } from '../src/lib/content.mjs';
 
@@ -42,4 +42,8 @@ test('credentials use their separate vault items, with one read per item', () =>
     ['Yeoux Site Access Gates', 'CF_ACCESS_CLIENT_ID', 'CF_ACCESS_CLIENT_SECRET'],
   ]);
   assert.deepEqual(keys, { SHARE_TOKEN: 'share-value', CF_ACCESS_CLIENT_ID: 'client-id', CF_ACCESS_CLIENT_SECRET: 'client-secret' });
+});
+
+test('yeoshare is executable when installed as a CLI', () => {
+  assert.doesNotThrow(() => accessSync(new URL('../bin/yeoshare.mjs', import.meta.url), constants.X_OK));
 });
