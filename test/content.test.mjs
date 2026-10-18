@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getItem, indexItems, isValidSlug, legacyRedirect, legacySection, legacySlug, putItem, titleFromSlug, uploadMetadata } from '../src/lib/content.mjs';
+import { deleteItem, getItem, indexItems, isValidSlug, legacyRedirect, legacySection, legacySlug, listAll, putItem, titleFromSlug, uploadMetadata } from '../src/lib/content.mjs';
 import { themeArtifactHtml, withArtifactTheme } from '../src/lib/artifactTheme.mjs';
 
 function memoryBucket() {
@@ -9,6 +9,7 @@ function memoryBucket() {
     store,
     async put(key, body, options) { store.set(key, { body: await new Response(body).text(), ...options, uploaded: new Date() }); },
     async get(key) { const o = store.get(key); return o ? { body: o.body, size: Buffer.byteLength(o.body), httpMetadata: o.httpMetadata } : null; },
+    async list({ prefix }) { return { objects: [...store.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, ...object })), truncated: false }; },
     async head(key) { return store.has(key) ? {} : null; },
     async delete(key) { store.delete(key); },
   };
@@ -109,5 +110,32 @@ test('large HTML streams through the native rewriter without buffering a DOM', a
   } finally {
     if (previous === undefined) delete globalThis.HTMLRewriter;
     else globalThis.HTMLRewriter = previous;
+  }
+});
+
+test('DELETE removes only the authenticated target from storage and its live section index', async () => {
+  for (const [section, prefix] of [['explorations', 'x/'], ['reports', 'r/']]) {
+    const bucket = memoryBucket();
+    await bucket.put(`${prefix}delete.html`, '<p>delete</p>', {});
+    await bucket.put(`${prefix}keep.html`, '<p>keep</p>', {});
+    const other = prefix === 'x/' ? 'r/' : 'x/';
+    await bucket.put(`${other}delete.html`, '<p>other section</p>', {});
+    const slugs = async () => indexItems(await listAll(bucket, prefix), prefix).map(item => item.slug);
+    assert.ok((await slugs()).includes('delete.html'));
+    const request = token => new Request(`https://yeoux.net/${section}/delete.html`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    for (const token of ['', 'wrong']) {
+      assert.equal((await deleteItem(bucket, request(token), section, 'delete.html', 'secret')).status, 401);
+      assert.ok(bucket.store.has(`${prefix}delete.html`));
+    }
+    assert.equal((await deleteItem(bucket, request('secret'), section, 'delete.html', '')).status, 401);
+    const response = await deleteItem(bucket, request('secret'), section, 'delete.html', 'secret');
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { deleted: true, url: `https://yeoux.net/${section}/delete.html` });
+    assert.equal((await getItem(bucket, section, 'delete.html')).status, 404);
+    assert.deepEqual(await slugs(), ['keep.html']);
+    assert.ok(bucket.store.has(`${other}delete.html`));
+    const missing = await deleteItem(bucket, request('secret'), section, 'delete.html', 'secret');
+    assert.equal(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: 'Not found' });
   }
 });

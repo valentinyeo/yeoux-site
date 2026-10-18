@@ -43,3 +43,39 @@ Prior attempt: PR https://github.com/valentinyeo/yeoux-site/pull/1 merged. Its c
 - Full checks and production build: pending.
 - Checked PR, non-admin merge, deployment of merged revision: pending.
 - Exact final output lines for G1–G7: pending.
+
+# Gates: yeoshare delete support
+
+Scope: authenticated page deletion through Worker and CLI, tested and deployed only to the Yeo UX account, with throwaway and requested-page live proof, version notes, commit and push. The YESI-1 evidence above is preserved historical work, not part of this deletion verification.
+
+- [x] D0: Deletion acceptance checks are well formed
+  CHECK: node /home/valentin/.agents/skills/unlazy/scripts/gate-lint.mjs GATES.md
+  EXPECT: LINT OK
+  EVIDENCE: automatic-evidence=v1; definition-sha256=69f81179f3934636347ff01de4824d2a1f500f2d29238b9fd688f82f77d1c57b; exit=0; EXPECT=matched; output-sha256=9d07ce9d51f0f70cfa984c95875d41843ef88e4157145ede1a5f2113cf7b4b76; output-bytes=268; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site; path=695691a31144/31 entries
+- [x] D1: Worker and CLI deletion regressions, repository checks and production build pass
+  CHECK: npm run check && npm run build
+  EXPECT: Complete!
+  EVIDENCE: automatic-evidence=v1; definition-sha256=538be70debda2adb75675c4663b3b2082e93f7832b9dc047a9db61e449d397e8; exit=0; EXPECT=matched; output-sha256=4ac56135b2737fee88a3530fdbd63f2c5d54fbc867d6046a74051479ccd1d9c3; output-bytes=9416; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site; path=695691a31144/31 entries
+- [x] D2: Worker deployed to the Yeo UX account and documented cache purge completed
+  EVIDENCE: npm run deploy succeeded using yeo-key; account 7865043d9ae730882b77f3d5d670c158; Worker version 9bf24a14-34ba-4885-bf35-24461eb0c837; both documented routes active. Targeted Cloudflare purge b1bebf5ed4655299f7cd826299957bef succeeded for six yeoux.net URLs after independently checking zone ownership. Post-purge live fixture and requested-page checks passed.
+- [x] D3: Live exploration and report fixtures are deleted and absent from their indexes after successful upload, auth controls and repeated-delete checks
+  CHECK: node .unlazy/yeoshare-delete/live.mjs --fixtures
+  EXPECT: DELETE FIXTURES PASS
+  EVIDENCE: automatic-evidence=v1; definition-sha256=40d18c5a8a9e77f985255ee272694add02cad9dc41c36e22d433f4d8eb773c5f; exit=0; EXPECT=matched; output-sha256=a81ca1c3c4034105a9b8936bec298b348e93f4ec6bd7a57d751055e017ef3e14; output-bytes=207; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site; path=695691a31144/31 entries
+- [x] D4: Requested suggestions page is missing and absent from the live explorations index after deletion
+  CHECK: node .unlazy/yeoshare-delete/live.mjs --requested
+  EXPECT: DELETE REQUESTED PASS
+  EVIDENCE: automatic-evidence=v1; definition-sha256=fa04d373e37720c10451fa77c1172e41267597c53c65ac0a2c50d567d69706c7; exit=0; EXPECT=matched; output-sha256=a7211359acb56690f28f366f5eddf63246aeab73bcba8ffb0143d9b57c6f472a; output-bytes=106; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site; path=695691a31144/31 entries
+- [ ] D5: Version, changelog, help and credential-safe changes reviewed and committed; remote matches the pushed commit
+  EVIDENCE: pending
+
+
+## Deletion live proof
+
+- Local checks: all 40 tests pass, comment and account-isolation checks pass, production build succeeds. Package and lockfile are 0.1.1; CHANGELOG.md and CLI help document deletion.
+- Exploration fixture: https://yeoux.net/explorations/99641573-explorations-delete-proof.html was uploaded with the real CLI, returned 200 and appeared in its index, then was deleted using its local file path.
+- Report fixture: https://yeoux.net/reports/060d6319-reports-delete-proof.html was uploaded with the real CLI, returned 200 and appeared in its index, then was deleted using its URL.
+- Both fixtures now return 404 and are absent from their respective indexes. Before deletion the same absence verifier rejected each live page. Missing and wrong bearer tokens returned 401 and preserved the pages; no Access token returned the Cloudflare login redirect. Repeated CLI deletion exited 1 and reported HTTP 404.
+- https://yeoux.net/explorations/9a1870da-suggestions.html returned 200 and was present in explorations before the authorized real CLI deletion. It now returns 404 and is absent from that index.
+- Live operational commands and non-secret records are retained locally in .unlazy/yeoshare-delete/. No keys were printed or stored there. Credentials were read through yeo-key only.
+- The YESI-1 ledger above remains historical. Its full-migration item-count and redirect assumptions intentionally no longer hold after an authorized page deletion. The current deletion acceptance gates are D0 through D5.

@@ -110,6 +110,16 @@ export async function putItem(bucket, request, section, slug, shareToken) {
   return Response.json({ url });
 }
 
+export async function deleteItem(bucket, request, section, slug, shareToken) {
+  if (!shareToken || request.headers.get('Authorization') !== `Bearer ${shareToken}`) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const key = SECTIONS[section].prefix + slug;
+  if (!await bucket.head(key)) return Response.json({ error: 'Not found' }, { status: 404 });
+  await bucket.delete(key);
+  return Response.json({ deleted: true, url: `https://yeoux.net/${section}/${slug}` });
+}
+
 export async function getItem(bucket, section, slug) {
   const object = await bucket.get(SECTIONS[section].prefix + slug);
   if (!object) return new Response('Not found', { status: 404 });
