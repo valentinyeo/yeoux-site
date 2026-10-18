@@ -16,6 +16,10 @@ directory = "./dist"
 pattern = "yeoux.net/*"
 zone_name = "yeoux.net"
 
+[[routes]]
+pattern = "admin.yeoux.net/*"
+zone_name = "yeoux.net"
+
 [[r2_buckets]]
 binding = "CONTENT"
 bucket_name = "yeoux-site-content"

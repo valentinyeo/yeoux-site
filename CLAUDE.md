@@ -7,7 +7,7 @@ The yeoux.net hub: explorations and reports for Yeo UX projects (never Hypertask
 - `src/lib/content.mjs`: sections (`x/` explorations, `r/` reports), upload rules, index order, old admin.yeoux.net link mapping.
 - `src/pages`: `/` hub, `/explorations`, `/reports`, one page per item. `PUT /<section>/<slug>` uploads with `Authorization: Bearer <SHARE_TOKEN>` and `X-Title`, `X-Project`, `X-Date`.
 - `src/middleware.js`: on host admin.yeoux.net, 301 every old `/p/<id>/<name>` link to its new place. Switch: `YESI_1_REDIRECTS` in `wrangler.toml`.
-- `bin/yeoshare.mjs`: the `yeoshare` command. Keys come from `yeo-key "Yeoux Site Share"`, never a file.
+- `bin/yeoshare.mjs`: the `yeoshare` command. Keys come from `yeo-key "Yeoux Site Share"` and `yeo-key "Yeoux Site Access Gates"`, never a file.
 - `tools/migrate.mjs <old bucket> [--apply]`: copies every old admin.yeoux.net object here; never deletes the old bucket.
 - `tools/gates.mjs`: the YESI-1 gates in `GATES.md`.
 
