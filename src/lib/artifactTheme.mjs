@@ -2,6 +2,7 @@ import { parse, parseFragment, serialize } from 'parse5';
 import { siteNavigation } from './siteNavigation.mjs';
 
 const marker = '<!--ht-theme-v1-->';
+const MAX_BUFFERED_HTML_BYTES = 1024 * 1024;
 const assets = `<script src="/theme/v1/init.js"></script><link rel="stylesheet" href="/theme/v1/theme.css"><link rel="stylesheet" href="/theme/v1/legacy.css"><script src="/theme/v1/theme.js" defer></script>`;
 const attr = (node, name) => node.attrs?.find(attribute => attribute.name === name)?.value;
 const supportedCharset = value => !value || /^(?:utf-?8|us-ascii)$/i.test(value.trim());
@@ -42,6 +43,26 @@ export async function withArtifactTheme(response, active) {
   if (!response.ok || response.body === null) return response;
   const type = response.headers.get('Content-Type') || '';
   if (!/^text\/html(?:\s*;|\s*$)/i.test(type) || !supportedCharset(headerCharset(type))) return response;
+  if (Number(response.headers.get('Content-Length')) > MAX_BUFFERED_HTML_BYTES) {
+    let themed = false;
+    let viewport = false;
+    return new HTMLRewriter()
+      .on('html', { element(element) {
+        themed = element.hasAttribute('data-ht-artifact');
+        if (!themed) element.setAttribute('data-ht-artifact', '');
+      } })
+      .on('meta[name="viewport"]', { element() { viewport = true; } })
+      .on('head', { element(element) {
+        element.onEndTag(end => {
+          if (!themed) end.before((viewport ? '' : '<meta name="viewport" content="width=device-width,initial-scale=1">') + assets, { html: true });
+        });
+      } })
+      .on('body', { element(element) {
+        if (!themed) element.prepend(marker + siteNavigation(active), { html: true });
+      } })
+      .on('header.ht-site-nav', { element(element) { if (!themed) element.remove(); } })
+      .transform(response);
+  }
   const bytes = await response.arrayBuffer();
   const original = () => new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
   let source;
