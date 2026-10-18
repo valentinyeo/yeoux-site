@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getItem, indexItems, isValidSlug, legacyRedirect, legacySection, legacySlug, putItem, titleFromSlug, uploadMetadata } from '../src/lib/content.mjs';
-import { themeArtifactHtml } from '../src/lib/artifactTheme.mjs';
+import { themeArtifactHtml, withArtifactTheme } from '../src/lib/artifactTheme.mjs';
 
 function memoryBucket() {
   const store = new Map();
   return {
     store,
     async put(key, body, options) { store.set(key, { body: await new Response(body).text(), ...options, uploaded: new Date() }); },
-    async get(key) { const o = store.get(key); return o ? { body: o.body, httpMetadata: o.httpMetadata } : null; },
+    async get(key) { const o = store.get(key); return o ? { body: o.body, size: Buffer.byteLength(o.body), httpMetadata: o.httpMetadata } : null; },
     async head(key) { return store.has(key) ? {} : null; },
     async delete(key) { store.delete(key); },
   };
@@ -59,6 +59,7 @@ test('uploads need the share token, land in their section and come back', async 
   assert.equal(bucket.store.get('r/r.html').customMetadata.project, 'pecunia');
   const got = await getItem(bucket, 'reports', 'r.html');
   assert.equal(got.headers.get('Content-Type'), 'text/html; charset=utf-8');
+  assert.equal(got.headers.get('Content-Length'), '9');
   assert.equal(await got.text(), '<p>hi</p>');
   assert.equal((await getItem(bucket, 'explorations', 'r.html')).status, 404);
 });
@@ -78,4 +79,35 @@ test('hosted HTML pages get the Yeo UX top bar', () => {
   assert.match(html, /data-site-nav/);
   assert.match(html, />Yeo UX</);
   assert.match(html, /href="\/reports" aria-current="page"/);
+});
+
+test('large HTML streams through the native rewriter without buffering a DOM', async () => {
+  const response = new Response('<html><head></head><body>large</body></html>', { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': String(12 * 1024 * 1024) } });
+  response.arrayBuffer = () => { throw new Error('large HTML must not be buffered'); };
+  const handlers = new Map();
+  const previous = globalThis.HTMLRewriter;
+  globalThis.HTMLRewriter = class {
+    on(selector, handler) { handlers.set(selector, handler); return this; }
+    transform(input) { assert.equal(input, response); return input; }
+  };
+  try {
+    assert.equal(await withArtifactTheme(response, '/reports'), response);
+    const attrs = new Map();
+    handlers.get('html').element({ hasAttribute: name => attrs.has(name), setAttribute: (name, value) => attrs.set(name, value) });
+    assert.ok(attrs.has('data-ht-artifact'));
+    let head;
+    handlers.get('head').element({ onEndTag: callback => callback({ before: html => { head = html; } }) });
+    assert.match(head, /theme\/v1\/theme.css/);
+    assert.match(head, /name="viewport"/);
+    let body;
+    handlers.get('body').element({ prepend: html => { body = html; } });
+    assert.match(body, /data-site-nav/);
+    assert.match(body, /href="\/reports" aria-current="page"/);
+    let removed = false;
+    handlers.get('header.ht-site-nav').element({ remove() { removed = true; } });
+    assert.ok(removed);
+  } finally {
+    if (previous === undefined) delete globalThis.HTMLRewriter;
+    else globalThis.HTMLRewriter = previous;
+  }
 });

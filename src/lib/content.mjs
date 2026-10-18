@@ -116,6 +116,7 @@ export async function getItem(bucket, section, slug) {
   return new Response(object.body, {
     headers: {
       'Content-Type': contentType(slug) || object.httpMetadata?.contentType || 'application/octet-stream',
+      'Content-Length': String(object.size),
       'Cache-Control': 'private, no-store',
     },
   });
