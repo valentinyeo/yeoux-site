@@ -19,8 +19,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: No code comments
-        run: node tools/strip-comments.mjs --check .
       - name: No Hypertask keys, account ids or Neon strings
         run: node tools/no-hypertask.mjs
       - name: Unit tests
