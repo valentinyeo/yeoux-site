@@ -1,14 +1,15 @@
 {
   "name": "yeoux-site",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
     "test": "node --test test/*.test.mjs tools/*.test.cjs",
     "check": "node tools/strip-comments.mjs --check . && node tools/no-hypertask.mjs && npm test",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "ship": "node tools/ship.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.1.1",

@@ -19,7 +19,7 @@ File deletion resolves the same real path and slug as upload, so the local file 
 npm ci
 npm run check
 npm run build
-yeo-key --env 'Hetzner Wrangler All Access' -- bash -c 'export CLOUDFLARE_API_TOKEN="$credential"; export CLOUDFLARE_ACCOUNT_ID=7865043d9ae730882b77f3d5d670c158; npm run deploy'
+npm run ship
 ```
 
-Deploy only to the Yeo UX account configured in `wrangler.toml`. The Worker serves both https://yeoux.net and the legacy admin redirects. Never deploy it to another account. Pages and indexes use `Cache-Control: private, no-store`; after deployment, purge the changed https://yeoux.net URLs through Cloudflare and verify with the Access service token.
+After the PR merges, run `npm run ship` from a clean main matching `origin/main`; it repeats the checks above before deploying only to the Yeo UX account configured in `wrangler.toml`. The Worker serves both https://yeoux.net and the legacy admin redirects. Never deploy it to another account. Pages and indexes use `Cache-Control: private, no-store`; `npm run ship` does not purge caches; after deployment, purge the changed https://yeoux.net URLs through Cloudflare and verify with the Access service token.

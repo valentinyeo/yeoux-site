@@ -17,6 +17,11 @@ The yeoux.net hub: explorations and reports for Yeo UX projects (never Hypertask
 npm ci && npm run check && npm run build
 ```
 
+## Ship
+
+Run `npm run ship` from a clean main after the PR merges.
+It runs the same checks as CI, deploys only to the Yeo UX account, stamps the deploy with the commit, and checks the live site is behind Zero Trust.
+
 ## Rules and what enforces them
 
 | Rule | Enforced by |
@@ -26,3 +31,5 @@ npm ci && npm run check && npm run build
 | No keys in git | `secret-scan` in CI |
 | yeoshare reads keys only through yeo-key | `test/yeoshare.test.mjs` |
 | Cloudflare account Yeo UX `7865043d9ae730882b77f3d5d670c158` only | `wrangler.toml` |
+| Deploy only from a clean origin/main | `tools/ship.mjs` |
+| CLAUDE.md names only real commands and files | `test/claude-md.test.mjs` |
