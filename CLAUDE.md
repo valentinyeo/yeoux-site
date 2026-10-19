@@ -26,7 +26,7 @@ It runs the same checks as CI, deploys only to the Yeo UX account, stamps the de
 
 | Rule | Enforced by |
 |---|---|
-| No code comments | `tools/strip-comments.mjs --check` in CI |
+| No code comments | required `no-comments` check (`tools/strip-comments.mjs --check`, covers JS, CSS, HTML, Astro, YAML and TOML) |
 | No Hypertask account id, Access audience, Neon string or Hypertask secret path | `tools/no-hypertask.mjs` in CI |
 | No keys in git | `secret-scan` in CI |
 | yeoshare reads keys only through yeo-key | `test/yeoshare.test.mjs` |

@@ -80,15 +80,93 @@ test('HTML: quoted attributes, script regex/template strings and style blocks', 
   await fixture('html', before.join('\n') + '\n', kept.join('\n') + '\n');
 });
 
+test('YAML: comments, quoted scalars, escapes, URLs, fragments and expressions', async () => {
+  const kept = [
+    'url: https://example.test/path#fragment',
+    'fragment: value#literal',
+    'single: \'it\'\'s # literal\'',
+    'double: "escaped \\" # literal"',
+    'expression: ${{ inputs.value }}#fragment',
+    'quoted_expression: "${{ inputs.value }} # literal"',
+    'plain: Don\'t remove this#fragment',
+    'plain_quotes: This is an unmatched " quote',
+    'shebang: #!/bin/sh',
+    'flow: ["# literal", \'# literal\']',
+    'anchor: &literal "# literal"',
+    'tag: !!str \'# literal\'',
+    'multiline: "first line',
+    '  # literal"',
+  ];
+  await fixture('yaml', '# remove\n' + kept.join('\n') + '\nlast: value # remove\n', kept.join('\n') + '\nlast: value\n');
+  await fixture('yaml', 'name: Say "hello # remove\r\n', 'name: Say "hello\r\n');
+});
+
+test('YAML: block scalars keep literal quotes, hashes and trailing shell text', async () => {
+  for (const indicator of ['|', '>', '|-', '>+', '|2', '>2-', '|-2']) {
+    const kept = [
+      `run: ${indicator}`,
+      '  #!/bin/sh',
+      '  echo "unmatched quote',
+      '  echo https://example.test/#fragment # literal trailing text',
+      '  echo ${{ inputs.value }}#fragment',
+      '  echo "# literal"',
+      '',
+      'next: value',
+    ];
+    const before = [...kept];
+    before[0] += ' # remove';
+    before.splice(3, 0, '  # remove');
+    await fixture('yaml', before.join('\n') + '\n# remove\n', kept.join('\n') + '\n');
+  }
+  for (const indicator of ['|', '|2', '&script |2']) {
+    await fixture('yaml', `steps:\n  - run: ${indicator}\n      # remove\n      echo ok\n    name: Run # remove\n`, `steps:\n  - run: ${indicator}\n      echo ok\n    name: Run\n`);
+  }
+  await fixture('yaml', '- |2\n  # remove\n  echo ok\n- next # remove\n', '- |2\n  echo ok\n- next\n');
+});
+
+test('TOML: basic, literal and multiline strings protect hashes and escapes', async () => {
+  const kept = [
+    '[settings]',
+    'url = "https://example.test/#fragment"',
+    'basic = "escaped \\" # literal"',
+    "literal = 'C:\\path\\#literal'",
+    'multiline = """first line',
+    '# literal',
+    'escaped \\" # literal"""',
+    "raw = '''first line",
+    '# literal',
+    "last line'''",
+    'four = """ends with a quote""""',
+    "five = '''ends with two quotes'''''",
+    'expression = "${{ inputs.value }}#fragment"',
+  ];
+  await fixture('toml', '# remove\n' + kept.join('\n') + '\nlast = 1# remove\n', kept.join('\n') + '\nlast = 1\n');
+});
+
+test('secret scanner directives remain protected in new languages and existing ones', async () => {
+  const { strip } = await api;
+  for (const [language, source] of [
+    ['yaml', 'value: ok # trufflehog:ignore\nrun: |\n  # gitleaks:allow\n  echo ok\n'],
+    ['toml', 'value = "ok" # gitleaks:allow\n'],
+    ['javascript', 'const x = 1; // trufflehog:ignore\n'],
+    ['shell', 'echo ok # gitleaks:allow\n'],
+  ]) {
+    await fixture(language, source, source);
+    assert.ok(strip(source, language).kept.every(c => c.reason === 'tool directive'));
+    assert.ok(strip(source, language).kept.length > 0);
+  }
+});
+
 test('license headers and directives retained in full, never join code lines', async () => {
   await fixture('javascript', `// Copyright 2026 Example\n// Licensed under MIT\n// Permission is hereby granted.\n// @ts-check\nconst a = 1; /* remove\n remove\n */ const b = 2; // remove\n`, `// Copyright 2026 Example\n// Licensed under MIT\n// Permission is hereby granted.\n// @ts-check\nconst a = 1;\n const b = 2;\n`);
 });
 
 test('protected directories/data and generated sources are excluded', async () => {
   const { languageFor } = await api;
-  for (const file of ['vendor/x.js', 'third_party/x.kt', 'node_modules/x.js', 'skillsrepo/x.py', 'docs/x.html', 'docs-site/x.ts', 'openwiki/x.sh', 'CLAUDE.md', 'AGENTS.md', 'README', 'data.json', 'config.toml', 'gradle/wrapper/gradle-wrapper.properties', 'tools/fixtures/x.html']) assert.equal(languageFor(file), null, file);
+  for (const file of ['vendor/x.js', 'third_party/x.kt', 'node_modules/x.js', 'skillsrepo/x.py', 'docs/x.html', 'docs-site/x.ts', 'openwiki/x.sh', 'CLAUDE.md', 'AGENTS.md', 'README', 'data.json', 'gradle/wrapper/gradle-wrapper.properties', 'tools/fixtures/x.html']) assert.equal(languageFor(file), null, file);
   assert.equal(languageFor('src/generated.js', '// automatically generated'), null);
   assert.equal(languageFor('assets/page.html'), 'html');
+  for (const [extension, language] of [['yml', 'yaml'], ['yaml', 'yaml'], ['toml', 'toml'], ['astro', 'astro']]) assert.equal(languageFor(`config.${extension}`), language);
 });
 
 test('CLI --verify rejects token changes and protected modifications', () => {
@@ -135,5 +213,77 @@ test('CLI --check fails on a new code comment and names where it is', () => {
     assert.equal(failed.status, 1);
     assert.match(failed.stderr, /tool\.js:3: \/\/ explains c/);
     assert.equal(fs.readFileSync(path.join(root, 'tool.js'), 'utf8'), '// eslint-disable-next-line\nconst b = 1;\nconst c = 2; // explains c\n');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const [extension, clean, planted] of [
+  ['yml', 'value: "https://example.test/#fragment"\n', '# planted comment\n'],
+  ['yaml', 'run: |\n  echo "# literal"\n', '  # planted comment\n'],
+  ['toml', 'value = "https://example.test/#fragment"\n', '# planted comment\n'],
+]) {
+  test(`CLI .${extension}: --check detects comments and --verify accepts only comment removal`, () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'strip-comments-language-'));
+    const script = path.join(__dirname, 'strip-comments.mjs');
+    const git = args => execFileSync('git', ['-C', root, ...args], { stdio: 'pipe' });
+    const file = `source.${extension}`;
+    try {
+      git(['init', '-q']);
+      fs.writeFileSync(path.join(root, file), clean);
+      git(['add', '.']);
+      assert.equal(spawnSync(process.execPath, [script, '--check', root]).status, 0);
+      fs.appendFileSync(path.join(root, file), planted);
+      const failed = spawnSync(process.execPath, [script, '--check', root], { encoding: 'utf8' });
+      assert.equal(failed.status, 1, failed.stderr);
+      assert.ok(failed.stderr.includes(`${file}:${clean.split('\n').length}:`), failed.stderr);
+      assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), clean + planted);
+      git(['add', '.']);
+      git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture']);
+      assert.notEqual(spawnSync(process.execPath, [script, '--verify', root]).status, 0);
+      execFileSync(process.execPath, [script, root]);
+      assert.equal(fs.readFileSync(path.join(root, file), 'utf8'), clean);
+      execFileSync(process.execPath, [script, '--verify', root]);
+      assert.equal(spawnSync(process.execPath, [script, '--check', root]).status, 0);
+      fs.appendFileSync(path.join(root, file), 'changed_token\n');
+      assert.notEqual(spawnSync(process.execPath, [script, '--verify', root]).status, 0);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+}
+
+for (const [name, before, expected] of [
+  ['frontmatter line comment', '---\n// remove\nconst url = "https://example.test/#fragment"; // remove\n---\n<p>{url}</p>\n', '---\nconst url = "https://example.test/#fragment";\n---\n<p>{url}</p>\n'],
+  ['frontmatter block comment', '---\n/* remove */\nconst marker: string = "<!--ht-theme-v1-->";\n---\n<p>{marker}</p>\n', '---\nconst marker: string = "<!--ht-theme-v1-->";\n---\n<p>{marker}</p>\n'],
+  ['HTML comment', '<!-- remove -->\n<p>Hello</p>\n', '<p>Hello</p>\n'],
+  ['template expression comment', '<p>{/* remove */}</p>\n', '<p>{ }</p>\n'],
+  ['JS strings inside expressions', '<p>{"https://example.test/#fragment"}{"<!--ht-theme-v1-->"}{`<!--ht-theme-v1-->`}{/* remove */}</p>\n', '<p>{"https://example.test/#fragment"}{"<!--ht-theme-v1-->"}{`<!--ht-theme-v1-->`}{ }</p>\n'],
+  ['attribute expression comment', '<p title={/* remove */ "<!--ht-theme-v1-->"}>Hello</p>\n', '<p title={ "<!--ht-theme-v1-->"}>Hello</p>\n'],
+  ['nested markup, regex and division', '{items.map(item => (<p>Don\'t remove {/* remove */}{item.value / 2}{/<!--literal-->/.test(item.value)}</p>))}\n', '{items.map(item => (<p>Don\'t remove { }{item.value / 2}{/<!--literal-->/.test(item.value)}</p>))}\n'],
+  ['script and style blocks and self-closing scripts', '<script is:inline src="/theme.js" />\n<script>const marker = "<!--ht-theme-v1-->"; // remove\n</script>\n<style>/* remove */a { color: red; }</style>\n', '<script is:inline src="/theme.js" />\n<script>const marker = "<!--ht-theme-v1-->";\n</script>\n<style> a { color: red; }</style>\n'],
+  ['fragment expressions', '{items.map(item => (<>Don\'t remove {/* remove */}<span title={item.title}>{item.title}</span></>))}\n', '{items.map(item => (<>Don\'t remove { }<span title={item.title}>{item.title}</span></>))}\n'],
+  ['CRLF frontmatter', '---\r\n// remove\r\nconst url = "https://example.test/#";\r\n---\r\n<p>{url}</p>\r\n', '---\r\nconst url = "https://example.test/#";\r\n---\r\n<p>{url}</p>\r\n'],
+]) {
+  test(`Astro: ${name}`, async () => {
+    const { tokenize, languageFor } = await api;
+    assert.equal(languageFor('src/page.astro'), 'astro');
+    assert.ok(tokenize(before, 'astro').comments.some(c => !c.reason));
+    assert.equal(tokenize(expected, 'astro').comments.filter(c => !c.reason).length, 0);
+    await fixture('astro', before, expected);
+  });
+}
+
+test('CLI .astro: --check reports frontmatter and template comment lines without false positives', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'strip-comments-astro-'));
+  const script = path.join(__dirname, 'strip-comments.mjs');
+  const clean = '---\nconst url = "https://example.test/#";\nconst marker = "<!--ht-theme-v1-->";\n---\n<p>{url}{marker}</p>\n';
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q']);
+    fs.writeFileSync(path.join(root, 'page.astro'), clean);
+    execFileSync('git', ['-C', root, 'add', '.']);
+    assert.equal(spawnSync(process.execPath, [script, '--check', root]).status, 0);
+    fs.writeFileSync(path.join(root, 'page.astro'), clean.replace('const url', '// remove\nconst url') + '<!-- remove -->\n{/* remove */}\n');
+    const failed = spawnSync(process.execPath, [script, '--check', root], { encoding: 'utf8' });
+    assert.equal(failed.status, 1, failed.stderr);
+    for (const line of [2, 7, 8]) assert.ok(failed.stderr.includes(`page.astro:${line}:`), failed.stderr);
+    execFileSync(process.execPath, [script, root]);
+    assert.equal(spawnSync(process.execPath, [script, '--check', root]).status, 0);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
