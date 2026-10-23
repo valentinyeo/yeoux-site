@@ -17,6 +17,44 @@ test('G1 refuses vacuous success when the source bucket is empty', async t => {
   }
 });
 
+test('G2 refuses empty migration counts before reading indexes', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return Response.json({ success: true, result: [] });
+  });
+  const printed = [];
+  t.mock.method(console, 'log', text => printed.push(text));
+  const previous = process.exitCode;
+  try {
+    await gates.g2();
+    assert.equal(process.exitCode, 1);
+    assert.equal(calls, 1);
+    assert.deepEqual(printed, ['G2 FAIL old bucket is empty; no migration counts verified']);
+  } finally {
+    process.exitCode = previous;
+  }
+});
+
+test('G2 counts only authenticated HTTP 200 index responses', async t => {
+  const printed = [];
+  t.mock.method(console, 'log', text => printed.push(text));
+  for (const status of [200, 302, 403, 500]) {
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      if (url.startsWith('https://api.cloudflare.com/')) return Response.json({ success: true, result: [{ key: 'page.html' }] });
+      assert.equal(options.redirect, 'manual');
+      return new Response(url.endsWith('/explorations') ? '<a href="/explorations/page.html">Page</a>' : '', { status });
+    });
+    if (status === 200) {
+      await gates.g2();
+      assert.deepEqual(printed.splice(0), ['G2 PASS 1 old = 1 new = 1 listed']);
+    } else {
+      await assert.rejects(gates.g2(), new RegExp(`must return HTTP 200 \\(received ${status}\\)`));
+      assert.deepEqual(printed, []);
+    }
+  }
+});
+
 test('G3 requires login redirects and an authenticated 200', async t => {
   t.mock.method(console, 'log', () => {});
   let calls = 0;

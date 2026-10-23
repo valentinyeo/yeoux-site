@@ -29,6 +29,7 @@ It runs the same checks as CI, deploys only to the Yeo UX account, stamps the de
 | No code comments | required `no-comments` check (`tools/strip-comments.mjs --check`, covers JS, CSS, HTML, Astro, YAML and TOML) |
 | No Hypertask account id, Access audience, Neon string or Hypertask secret path | `tools/no-hypertask.mjs` in CI |
 | No keys in git | `secret-scan` in CI |
+| Live migration gates fail on empty sources and on any non-200 page; no vacuous PASS | `test/gates.test.mjs` in `tests` |
 | yeoshare reads keys only through yeo-key | `test/yeoshare.test.mjs` |
 | Cloudflare account Yeo UX `7865043d9ae730882b77f3d5d670c158` only | `wrangler.toml` |
 | Deploy only from a clean origin/main | `tools/ship.mjs` |
