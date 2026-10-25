@@ -8,6 +8,7 @@
     "build": "astro build",
     "test": "node --test test/*.test.mjs tools/*.test.cjs",
     "check": "node tools/strip-comments.mjs --check . && node tools/no-hypertask.mjs && npm test",
+    "deploy": "npm run build && wrangler deploy",
     "ship": "node tools/ship.mjs"
   },
   "dependencies": {
