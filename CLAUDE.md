@@ -34,3 +34,5 @@ It runs the same checks as CI, deploys only to the Yeo UX account, stamps the de
 | Cloudflare account Yeo UX `7865043d9ae730882b77f3d5d670c158` only | `wrangler.toml` |
 | Deploy only from a clean origin/main | `tools/ship.mjs` |
 | CLAUDE.md names only real commands and files | `test/claude-md.test.mjs` |
+| Workflow jobs use the Yeo UX self-hosted runner, never paid GitHub minutes | `test/workflows.test.mjs` in `tests` |
+| Ship only through `npm run ship`; no raw deploy npm script | `test/ship.test.mjs` in `tests` |
