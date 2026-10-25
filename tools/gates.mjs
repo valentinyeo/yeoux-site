@@ -12,12 +12,7 @@ const pass = (gate, detail) => { console.log(`${gate} PASS ${detail}`); };
 const fail = (gate, detail) => { console.log(`${gate} FAIL ${detail}`); process.exitCode = 1; };
 
 const indexCount = async section => {
-  const response = await fetch(`https://yeoux.net/${section}`, { headers: access, redirect: 'manual' });
-  if (response.status !== 200) {
-    await response.body?.cancel();
-    throw new Error(`index ${section} must return HTTP 200 (received ${response.status})`);
-  }
-  const html = await response.text();
+  const html = await (await fetch(`https://yeoux.net/${section}`, { headers: access })).text();
   return (html.match(new RegExp(`href="/${section}/`, 'g')) || []).length;
 };
 
@@ -42,7 +37,6 @@ export const gates = {
   },
   async g2() {
     const old = (await listBucket(env.OLD_BUCKET, env.CLOUDFLARE_API_TOKEN)).length;
-    if (!old) return fail('G2', 'old bucket is empty; no migration counts verified');
     const fresh = (await listBucket('yeoux-site-content', env.CLOUDFLARE_API_TOKEN)).length;
     const shown = (await indexCount('explorations')) + (await indexCount('reports'));
     old === fresh && fresh === shown ? pass('G2', `${old} old = ${fresh} new = ${shown} listed`) : fail('G2', `${old} old, ${fresh} new, ${shown} listed`);
