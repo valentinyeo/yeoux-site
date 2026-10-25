@@ -27,6 +27,22 @@ function fixture({ dirty = '', remote = sha, head = sha, help = '--message', sta
   return { calls, requests, ship: () => main(run, fetchImpl) };
 }
 
+test('package scripts expose ship without a raw deploy bypass', () => {
+  const check = scripts => {
+    assert.ok(!Object.hasOwn(scripts, 'deploy'), 'raw deploy npm script is forbidden');
+    assert.equal(scripts.ship, 'node tools/ship.mjs');
+    for (const [name, command] of Object.entries(scripts)) {
+      assert.doesNotMatch(command, /\bwrangler(?:\s|["'])+deploy\b/i, `${name}: direct wrangler deploy is forbidden`);
+    }
+  };
+  check({ ship: 'node tools/ship.mjs' });
+  assert.throws(() => check({ ship: 'node tools/ship.mjs', deploy: 'npm run build && wrangler deploy' }), /raw deploy/);
+  assert.throws(() => check({ ship: 'node tools/ship.mjs', release: 'npx wrangler deploy' }), /direct wrangler deploy/);
+  assert.throws(() => check({ ship: 'node other.mjs' }), /node tools\/ship\.mjs/);
+  const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  check(scripts);
+});
+
 test('dirty trees and HEAD other than origin/main refuse before npm or yeo-key', async () => {
   for (const [options, message] of [[{ dirty: ' M README.md\n' }, /working tree must be clean/], [{ dirty: '?? untracked.txt\n' }, /working tree must be clean/], [{ remote: 'b'.repeat(40) }, /HEAD must equal origin\/main/]]) {
     const f = fixture(options);
