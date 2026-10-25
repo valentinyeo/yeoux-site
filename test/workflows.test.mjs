@@ -59,3 +59,35 @@ test('workflow runner policy accepts self-hosted jobs and rejects unsafe runner 
   assert.throws(() => checkWorkflow('jobs:\n  invalid: null', 'invalid.yaml'), /job must be a mapping/);
   assert.throws(() => checkJob('    runs-on: [unterminated'), /flow sequence/i);
 });
+
+function secretScanTriggers() {
+  const workflow = parse(readFileSync(new URL('../.github/workflows/gitleaks.yml', import.meta.url), 'utf8'));
+  return workflow.on;
+}
+
+test('the full-history secret scan runs weekly and can be started by hand', () => {
+  const triggers = secretScanTriggers();
+  assert.ok(triggers && typeof triggers === 'object' && !Array.isArray(triggers), 'gitleaks.yml: needs named triggers');
+  const schedule = triggers.schedule;
+  assert.ok(Array.isArray(schedule) && schedule.length > 0, 'gitleaks.yml: needs a schedule so the whole history is rescanned without a push');
+  for (const entry of schedule) {
+    assert.match(String(entry?.cron), /^\S+ \S+ \S+ \S+ \S+$/, 'gitleaks.yml: schedule needs a five-field cron');
+  }
+  assert.ok(Object.hasOwn(triggers, 'workflow_dispatch'), 'gitleaks.yml: needs workflow_dispatch so the weekly path can be run once as proof');
+  assert.ok(Object.hasOwn(triggers, 'push') && Object.hasOwn(triggers, 'pull_request'), 'gitleaks.yml: keeps scanning pushes and pull requests');
+});
+
+test('the secret scan trigger policy accepts the shipped file and rejects a push-only file', () => {
+  const check = triggers => {
+    assert.ok(triggers && typeof triggers === 'object' && !Array.isArray(triggers), 'needs named triggers');
+    assert.ok(Array.isArray(triggers.schedule) && triggers.schedule.length > 0, 'needs a schedule');
+    assert.match(String(triggers.schedule[0]?.cron), /^\S+ \S+ \S+ \S+ \S+$/, 'needs a five-field cron');
+    assert.ok(Object.hasOwn(triggers, 'workflow_dispatch'), 'needs workflow_dispatch');
+  };
+  assert.doesNotThrow(() => check({ push: null, pull_request: null, schedule: [{ cron: '17 4 * * 1' }], workflow_dispatch: null }));
+  assert.throws(() => check(['push', 'pull_request']), /needs named triggers/);
+  assert.throws(() => check({ push: null, pull_request: null }), /needs a schedule/);
+  assert.throws(() => check({ push: null, schedule: [{ cron: 'weekly' }], workflow_dispatch: null }), /five-field cron/);
+  assert.throws(() => check({ push: null, schedule: [], workflow_dispatch: null }), /needs a schedule/);
+  assert.throws(() => check({ push: null, schedule: [{ cron: '17 4 * * 1' }] }), /needs workflow_dispatch/);
+});
