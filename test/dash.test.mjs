@@ -178,6 +178,12 @@ test('covered stories keep their mark and sink below open stories', () => {
   assert.deepEqual(rows.map(row => row.story.id), ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa']);
 });
 
+test('stories added after a saved order still show', () => {
+  const { catalog } = parseDayCatalog(sampleCatalog, '2026-11-01');
+  const file = { ...emptyDecisionFile('2026-11-01'), order: ['bbbbbbbbbbbbbbbb'] };
+  assert.deepEqual(reviewRows(catalog, file).map(row => row.story.id), ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa']);
+});
+
 test('a new spin on a covered story stays open', () => {
   assert.equal(isDone({ covered: { date: '2026-11-01', video: '', spin: true } }), false);
   assert.equal(isDone({ covered: { date: '2026-11-01', video: 'javascript:alert(1)', spin: false } }), true);
@@ -186,6 +192,45 @@ test('a new spin on a covered story stays open', () => {
   raw.stories[0].covered = { date: '2026-11-01', video: 'javascript:alert(1)' };
   const { catalog } = parseDayCatalog(raw, '2026-11-01');
   assert.equal(catalog.stories[0].covered.video, '');
+});
+
+test('a story marked used sinks last and counts as done', () => {
+  assert.deepEqual(parseDecisionWrite({ storyId: 'aaaaaaaaaaaaaaaa', verdict: 'used' }).write.verdict, 'used');
+  const { catalog } = parseDayCatalog(sampleCatalog, '2026-11-01');
+  const { file } = parseDecisionFile({
+    date: '2026-11-01',
+    decisions: { aaaaaaaaaaaaaaaa: { storyId: 'aaaaaaaaaaaaaaaa', verdict: 'used', at: 't', by: 'a@b.c' } },
+  }, '2026-11-01');
+  const rows = reviewRows(catalog, file);
+  assert.deepEqual(rows.map(row => row.story.id), ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa']);
+  assert.equal(isDone(rows[1].story, rows[1].decision), true);
+  assert.equal(isDone(rows[0].story, rows[0].decision), false);
+});
+
+test('a script line survives the catalog parse', () => {
+  const raw = structuredClone(sampleCatalog);
+  raw.stories[0].script = 'Example ships one. It does two things.';
+  const { catalog } = parseDayCatalog(raw, '2026-11-01');
+  assert.equal(catalog.stories[0].script, 'Example ships one. It does two things.');
+  assert.equal(catalog.stories[1].script, '');
+});
+
+test('catalog PUT with resetOrder clears the saved order and keeps verdicts', async () => {
+  const bucket = memoryBucket();
+  await bucket.put(decisionsKey('ai-movers', '2026-11-01'), JSON.stringify({
+    date: '2026-11-01',
+    order: ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa'],
+    decisions: { aaaaaaaaaaaaaaaa: { storyId: 'aaaaaaaaaaaaaaaa', verdict: 'accept', at: 't', by: 'a@b.c' } },
+  }));
+  const res = await putCatalog(bucket, new Request('https://yeoux.net/dash/ai-movers/2026-11-01/catalog', {
+    method: 'PUT',
+    headers: { Authorization: 'Bearer secret', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...sampleCatalog, resetOrder: true }),
+  }), 'ai-movers', '2026-11-01', 'secret');
+  assert.equal(res.status, 200);
+  const saved = JSON.parse((await bucket.get(decisionsKey('ai-movers', '2026-11-01'))).body);
+  assert.deepEqual(saved.order, []);
+  assert.equal(saved.decisions.aaaaaaaaaaaaaaaa.verdict, 'accept');
 });
 
 test('Access email comes only from the Access header', () => {

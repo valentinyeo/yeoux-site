@@ -2,7 +2,7 @@ export const DASH_PREFIX = 'd/';
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 export const DASHBOARD_PATTERN = /^[a-z0-9-]{1,40}$/;
 export const STORY_ID_PATTERN = /^[0-9a-f]{16}$/;
-export const VERDICTS = new Set(['accept', 'reject']);
+export const VERDICTS = new Set(['accept', 'reject', 'used']);
 const HOOK_SKIP = new Set(['a', 'an', 'the', 'and', 'or', 'of', 'to', 'for', 'in', 'on', 'with', 'from', 'by', 'as', 'at', 'is', 'are', 'its', 'into', 'over', 'via']);
 const SOURCE_NAMES = {
   github: 'GitHub',
@@ -86,7 +86,7 @@ export function parseDecisionWrite(body) {
     return { write: { storyId, verdict: null } };
   }
   const verdict = parseVerdict(body.verdict);
-  if (!verdict) return { error: 'verdict must be accept or reject' };
+  if (!verdict) return { error: 'verdict must be accept, reject or used' };
   return { write: { storyId, verdict } };
 }
 
@@ -202,6 +202,7 @@ export function slimStory(row, index = 0) {
     label: cleanTitle(row.label) || labelFromBeat(beat),
     look: cleanTitle(row.look) || lookFromSignals(signals, urls),
     sources,
+    script: cleanTitle(row.script),
     ...(parseCovered(row.covered) ? { covered: parseCovered(row.covered) } : {}),
   };
 }
@@ -214,7 +215,7 @@ export function parseCovered(raw) {
   return { date, video, spin: raw.spin === true };
 }
 
-export const isDone = story => Boolean(story.covered && !story.covered.spin);
+export const isDone = (story, decision = null) => Boolean((story.covered && !story.covered.spin) || decision?.verdict === 'used');
 
 export function renderHookHtml(hook) {
   const escape = value => String(value).replace(/[&<>"']/g, char => ({
@@ -419,15 +420,14 @@ export function reviewRows(catalog, file) {
     used.add(id);
     ordered.push(story);
   }
-  if (!file.order?.length) {
-    for (const story of catalog.stories) {
-      if (used.has(story.id)) continue;
-      if (file.decisions[story.id]?.verdict === 'reject') continue;
-      used.add(story.id);
-      ordered.push(story);
-    }
+  for (const story of catalog.stories) {
+    if (used.has(story.id)) continue;
+    if (file.decisions[story.id]?.verdict === 'reject') continue;
+    used.add(story.id);
+    ordered.push(story);
   }
-  ordered.sort((a, b) => Number(isDone(a)) - Number(isDone(b)));
+  const done = story => Number(isDone(story, file.decisions[story.id]));
+  ordered.sort((a, b) => done(a) - done(b));
   return ordered.map((story, index) => ({
     story,
     position: index + 1,
@@ -483,6 +483,11 @@ export async function putCatalog(bucket, request, dashboardId, date, shareToken)
   const { catalog, error } = parseDayCatalog(raw, date);
   if (error) return Response.json({ error }, { status: 400 });
   await writeJson(bucket, catalogKey(dashboardId, date), catalog);
+  if (raw.resetOrder === true) {
+    const current = await readJson(bucket, decisionsKey(dashboardId, date));
+    const { file } = parseDecisionFile(current && !current.error ? current : null, date);
+    if (file?.order?.length) await writeJson(bucket, decisionsKey(dashboardId, date), { ...file, order: [] });
+  }
   return Response.json({
     url: `https://yeoux.net/dash/${dashboardId}/${date}`,
     storyCount: catalog.storyCount,

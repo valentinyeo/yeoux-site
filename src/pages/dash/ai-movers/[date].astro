@@ -37,7 +37,7 @@ const rows = reviewRows(catalog, file || emptyDecisionFile(date));
 const target = catalog.targetAccept || TARGET_ACCEPT;
 const accepted = rows.filter(row => row.decision?.verdict === 'accept').length;
 const pending = rows.filter(row => !row.decision && !isDone(row.story)).length;
-const done = rows.filter(row => isDone(row.story)).length;
+const done = rows.filter(row => isDone(row.story, row.decision)).length;
 const reserveLeft = (catalog.reserves || []).length;
 ---
 <Base active="/dash/ai-movers" title={`AI Movers · ${date}`} subtitle={`Twenty on the board. Keep ${target}. Reject swaps a reserve. Drag sets video order. ${accepted}/${target} keep, ${pending} open, ${done} already covered, ${reserveLeft} in reserve.`}>
@@ -134,6 +134,16 @@ const reserveLeft = (catalog.reserves || []).length;
       border-color: #e8d590;
       color: #111;
     }
+    .dash-script {
+      margin: 0.35rem 0 0.2rem;
+      font-size: 1.12rem;
+      line-height: 1.45;
+    }
+    .dash-actions .btn.is-on-used {
+      background: oklch(var(--bc) / 0.75);
+      border-color: oklch(var(--bc) / 0.75);
+      color: oklch(var(--b1));
+    }
     .dash-actions .btn.is-on-reject {
       background: #d9645c;
       border-color: #d9645c;
@@ -150,7 +160,7 @@ const reserveLeft = (catalog.reserves || []).length;
   <div class="dash-board" data-day={date} data-board data-target={target}>
     {rows.map(row => (
       <article
-        class:list={['dash-card', isDone(row.story) && 'is-done']}
+        class:list={['dash-card', isDone(row.story, row.decision) && 'is-done']}
         data-story-id={row.story.id}
         data-verdict={row.decision?.verdict || ''}
         draggable="true"
@@ -158,7 +168,9 @@ const reserveLeft = (catalog.reserves || []).length;
         <div class="dash-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</div>
         <div>
           <div class="dash-label"><span class="dash-pos" data-pos>{row.position}</span>{row.story.label}</div>
-          <h2 class="dash-hook" set:html={renderHookHtml(row.story.hook)} />
+          {row.story.script
+            ? <p class="dash-script">{row.story.script}</p>
+            : <h2 class="dash-hook" set:html={renderHookHtml(row.story.hook)} />}
           <p class="dash-look">{row.story.look}</p>
           {(row.story.sources || []).length > 0 && (
             <div class="dash-sources" data-sources>
@@ -188,6 +200,11 @@ const reserveLeft = (catalog.reserves || []).length;
             type="button"
             data-verdict="reject"
           >Reject</button>
+          <button
+            class:list={['btn', 'btn-sm', 'btn-ghost', row.decision?.verdict === 'used' && 'is-on-used']}
+            type="button"
+            data-verdict="used"
+          >Already used</button>
         </div>
       </article>
     ))}
@@ -198,6 +215,7 @@ const reserveLeft = (catalog.reserves || []).length;
       <div class="dash-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</div>
       <div>
         <div class="dash-label"><span class="dash-pos" data-pos>0</span><span data-label></span></div>
+        <p class="dash-script" data-script hidden></p>
         <h2 class="dash-hook" data-hook></h2>
         <p class="dash-look" data-look></p>
         <div class="dash-sources" data-sources></div>
@@ -206,6 +224,7 @@ const reserveLeft = (catalog.reserves || []).length;
       <div class="dash-actions">
         <button class="btn btn-sm" type="button" data-verdict="accept">Accept</button>
         <button class="btn btn-sm btn-ghost" type="button" data-verdict="reject">Reject</button>
+        <button class="btn btn-sm btn-ghost" type="button" data-verdict="used">Already used</button>
       </div>
     </article>
   </template>
@@ -239,11 +258,13 @@ const reserveLeft = (catalog.reserves || []).length;
 
       const paintVerdict = (card, verdict) => {
         card.setAttribute('data-verdict', verdict || '');
+        card.classList.toggle('is-done', verdict === 'used');
         card.querySelectorAll('button[data-verdict]').forEach((button) => {
           const value = button.getAttribute('data-verdict');
           button.classList.toggle('is-on', value === 'accept' && verdict === 'accept');
           button.classList.toggle('is-on-reject', value === 'reject' && verdict === 'reject');
-          button.classList.toggle('btn-ghost', !(value === 'reject' && verdict === 'reject'));
+          button.classList.toggle('is-on-used', value === 'used' && verdict === 'used');
+          button.classList.toggle('btn-ghost', value !== 'accept');
         });
       };
 
@@ -251,7 +272,12 @@ const reserveLeft = (catalog.reserves || []).length;
         card.setAttribute('data-story-id', story.id);
         card.setAttribute('data-verdict', '');
         card.querySelector('[data-label]').textContent = story.label || 'STORY';
-        card.querySelector('[data-hook]').innerHTML = renderHook(story.hook || story.title || '');
+        const script = card.querySelector('[data-script]');
+        const hook = card.querySelector('[data-hook]');
+        script.textContent = story.script || '';
+        script.hidden = !story.script;
+        hook.innerHTML = renderHook(story.hook || story.title || '');
+        hook.hidden = Boolean(story.script);
         card.querySelector('[data-look]').textContent = story.look || '';
         const sources = card.querySelector('[data-sources]');
         sources.innerHTML = '';
@@ -320,6 +346,10 @@ const reserveLeft = (catalog.reserves || []).length;
             }
           } else {
             paintVerdict(card, clear ? '' : verdict);
+            if (!clear && verdict === 'used') {
+              board.appendChild(card);
+              renumber();
+            }
           }
         } catch (error) {
           alert(error.message || 'Save failed');
