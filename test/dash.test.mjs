@@ -8,6 +8,7 @@ import {
   emptyDecisionFile,
   getCatalog,
   hookFromTitle,
+  isDone,
   listDashboardDates,
   mergeDecision,
   parseDayCatalog,
@@ -164,6 +165,27 @@ test('reviewRows treat missing decisions as pending', () => {
   const rows = reviewRows(catalog, file);
   assert.equal(rows[0].decision.verdict, 'accept');
   assert.equal(rows[1].decision, null);
+});
+
+test('covered stories keep their mark and sink below open stories', () => {
+  const raw = structuredClone(sampleCatalog);
+  raw.stories[0].covered = { date: '2026-11-01', video: 'https://youtu.be/Klq55FUs_Uw', spin: false };
+  raw.stories[1].covered = { date: 'bad', video: 'https://youtu.be/x' };
+  const { catalog } = parseDayCatalog(raw, '2026-11-01');
+  assert.deepEqual(catalog.stories[0].covered, { date: '2026-11-01', video: 'https://youtu.be/Klq55FUs_Uw', spin: false });
+  assert.equal(catalog.stories[1].covered, undefined);
+  const rows = reviewRows(catalog, emptyDecisionFile('2026-11-01'));
+  assert.deepEqual(rows.map(row => row.story.id), ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa']);
+});
+
+test('a new spin on a covered story stays open', () => {
+  assert.equal(isDone({ covered: { date: '2026-11-01', video: '', spin: true } }), false);
+  assert.equal(isDone({ covered: { date: '2026-11-01', video: 'javascript:alert(1)', spin: false } }), true);
+  assert.equal(isDone({}), false);
+  const raw = structuredClone(sampleCatalog);
+  raw.stories[0].covered = { date: '2026-11-01', video: 'javascript:alert(1)' };
+  const { catalog } = parseDayCatalog(raw, '2026-11-01');
+  assert.equal(catalog.stories[0].covered.video, '');
 });
 
 test('Access email comes only from the Access header', () => {
