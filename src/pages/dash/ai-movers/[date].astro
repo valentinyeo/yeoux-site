@@ -12,6 +12,7 @@ import {
   readJson,
   renderHookHtml,
   reviewRows,
+  isDone,
 } from '../../../lib/dash.mjs';
 
 export const prerender = false;
@@ -35,10 +36,11 @@ const { file } = parseDecisionFile(decisionsRaw && !decisionsRaw.error ? decisio
 const rows = reviewRows(catalog, file || emptyDecisionFile(date));
 const target = catalog.targetAccept || TARGET_ACCEPT;
 const accepted = rows.filter(row => row.decision?.verdict === 'accept').length;
-const pending = rows.filter(row => !row.decision).length;
+const pending = rows.filter(row => !row.decision && !isDone(row.story)).length;
+const done = rows.filter(row => isDone(row.story)).length;
 const reserveLeft = (catalog.reserves || []).length;
 ---
-<Base active="/dash/ai-movers" title={`AI Movers · ${date}`} subtitle={`Twenty on the board. Keep ${target}. Reject swaps a reserve. Drag sets video order. ${accepted}/${target} keep, ${pending} open, ${reserveLeft} in reserve.`}>
+<Base active="/dash/ai-movers" title={`AI Movers · ${date}`} subtitle={`Twenty on the board. Keep ${target}. Reject swaps a reserve. Drag sets video order. ${accepted}/${target} keep, ${pending} open, ${done} already covered, ${reserveLeft} in reserve.`}>
   <style>
     .dash-board { display: flex; flex-direction: column; gap: 0.85rem; }
     .dash-card {
@@ -115,6 +117,12 @@ const reserveLeft = (catalog.reserves || []).length;
       font-size: 0.8rem;
       overflow-wrap: anywhere;
     }
+    .dash-card.is-done { opacity: 0.5; }
+    .dash-covered {
+      margin-top: 0.4rem;
+      font-size: 0.8rem;
+      color: #e8d590;
+    }
     .dash-actions {
       display: flex;
       flex-direction: column;
@@ -142,7 +150,7 @@ const reserveLeft = (catalog.reserves || []).length;
   <div class="dash-board" data-day={date} data-board data-target={target}>
     {rows.map(row => (
       <article
-        class="dash-card"
+        class:list={['dash-card', isDone(row.story) && 'is-done']}
         data-story-id={row.story.id}
         data-verdict={row.decision?.verdict || ''}
         draggable="true"
@@ -159,11 +167,17 @@ const reserveLeft = (catalog.reserves || []).length;
               ))}
             </div>
           )}
+          {row.story.covered && (
+            <p class="dash-covered">
+              {isDone(row.story) ? 'Done. Covered' : 'New spin. Covered'} {row.story.covered.date}
+              {row.story.covered.video && (<>: <a class="link" href={row.story.covered.video} target="_blank" rel="noopener noreferrer">{row.story.covered.video}</a></>)}
+            </p>
+          )}
           {row.story.urls[0] && (
             <a class="dash-link link link-hover" href={row.story.urls[0]} target="_blank" rel="noopener noreferrer">{row.story.urls[0]}</a>
           )}
         </div>
-        <div class="dash-actions">
+        <div class="dash-actions" hidden={isDone(row.story)}>
           <button
             class:list={['btn', 'btn-sm', row.decision?.verdict === 'accept' && 'is-on']}
             type="button"

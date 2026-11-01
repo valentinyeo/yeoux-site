@@ -202,8 +202,19 @@ export function slimStory(row, index = 0) {
     label: cleanTitle(row.label) || labelFromBeat(beat),
     look: cleanTitle(row.look) || lookFromSignals(signals, urls),
     sources,
+    ...(parseCovered(row.covered) ? { covered: parseCovered(row.covered) } : {}),
   };
 }
+
+export function parseCovered(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const date = String(raw.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const video = /^https:\/\//.test(String(raw.video || '')) ? String(raw.video) : '';
+  return { date, video, spin: raw.spin === true };
+}
+
+export const isDone = story => Boolean(story.covered && !story.covered.spin);
 
 export function renderHookHtml(hook) {
   const escape = value => String(value).replace(/[&<>"']/g, char => ({
@@ -416,6 +427,7 @@ export function reviewRows(catalog, file) {
       ordered.push(story);
     }
   }
+  ordered.sort((a, b) => Number(isDone(a)) - Number(isDone(b)));
   return ordered.map((story, index) => ({
     story,
     position: index + 1,
