@@ -178,6 +178,12 @@ test('covered stories keep their mark and sink below open stories', () => {
   assert.deepEqual(rows.map(row => row.story.id), ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa']);
 });
 
+test('stories added after a saved order still show', () => {
+  const { catalog } = parseDayCatalog(sampleCatalog, '2026-11-01');
+  const file = { ...emptyDecisionFile('2026-11-01'), order: ['bbbbbbbbbbbbbbbb'] };
+  assert.deepEqual(reviewRows(catalog, file).map(row => row.story.id), ['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa']);
+});
+
 test('a new spin on a covered story stays open', () => {
   assert.equal(isDone({ covered: { date: '2026-11-01', video: '', spin: true } }), false);
   assert.equal(isDone({ covered: { date: '2026-11-01', video: 'javascript:alert(1)', spin: false } }), true);

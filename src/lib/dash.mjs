@@ -419,13 +419,11 @@ export function reviewRows(catalog, file) {
     used.add(id);
     ordered.push(story);
   }
-  if (!file.order?.length) {
-    for (const story of catalog.stories) {
-      if (used.has(story.id)) continue;
-      if (file.decisions[story.id]?.verdict === 'reject') continue;
-      used.add(story.id);
-      ordered.push(story);
-    }
+  for (const story of catalog.stories) {
+    if (used.has(story.id)) continue;
+    if (file.decisions[story.id]?.verdict === 'reject') continue;
+    used.add(story.id);
+    ordered.push(story);
   }
   ordered.sort((a, b) => Number(isDone(a)) - Number(isDone(b)));
   return ordered.map((story, index) => ({
