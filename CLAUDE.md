@@ -5,7 +5,7 @@ The yeoux.net hub: dashboards, explorations and reports for Yeo UX projects (nev
 ## Parts
 
 - `src/lib/content.mjs`: sections (`x/` explorations, `r/` reports), upload rules, index order, old admin.yeoux.net link mapping.
-- `src/lib/dash.mjs`: interactive `dash` apps under R2 `d/`. First app AI Movers at `/dash/ai-movers` and `/dash/ai-movers/<UTC-date>`. Catalog PUT needs `SHARE_TOKEN`. Decision POST needs Access email. Ticket: https://app.hypertask.ai/detail/project-11612/1
+- `src/lib/dash.mjs`: interactive `dash` apps under R2 `d/`. First app AI Movers at `/dash/ai-movers` and `/dash/ai-movers/<UTC-date>`. Catalog has twenty shown stories plus reserves, source labels, and reject-to-replace. Catalog PUT needs `SHARE_TOKEN`. Decision POST and order PUT need Access email. Ticket: https://app.hypertask.ai/detail/project-11612/1
 - `src/pages`: `/` hub, `/dash`, `/explorations`, `/reports`. Artifact pages use `DELETE`/`PUT` with `Authorization: Bearer <SHARE_TOKEN>` and `X-Title`, `X-Project`, `X-Date`.
 - `src/middleware.js`: on host admin.yeoux.net, 301 every old `/p/<id>/<name>` link to its new place. Switch: `YESI_1_REDIRECTS` in `wrangler.toml`.
 - `bin/yeoshare.mjs`: the `yeoshare` command, including `--delete <file-or-url>`. Keys come from `yeo-key "Yeoux Site Share"` and `yeo-key "Yeoux Site Access Gates"`, never a file.
