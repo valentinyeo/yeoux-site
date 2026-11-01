@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../../layouts/Base.astro';
 import {
+  TARGET_ACCEPT,
   catalogKey,
   decisionsKey,
   emptyDecisionFile,
@@ -9,6 +10,7 @@ import {
   parseDayCatalog,
   parseDecisionFile,
   readJson,
+  renderHookHtml,
   reviewRows,
 } from '../../../lib/dash.mjs';
 
@@ -31,73 +33,329 @@ if (catalogError || !catalog) {
 const decisionsRaw = await readJson(env.CONTENT, decisionsKey('ai-movers', date));
 const { file } = parseDecisionFile(decisionsRaw && !decisionsRaw.error ? decisionsRaw : null, date);
 const rows = reviewRows(catalog, file || emptyDecisionFile(date));
+const target = catalog.targetAccept || TARGET_ACCEPT;
 const accepted = rows.filter(row => row.decision?.verdict === 'accept').length;
-const rejected = rows.filter(row => row.decision?.verdict === 'reject').length;
-const pending = rows.length - accepted - rejected;
+const pending = rows.filter(row => !row.decision).length;
+const reserveLeft = (catalog.reserves || []).length;
 ---
-<Base active="/dash/ai-movers" title={`AI Movers · ${date}`} subtitle={`${rows.length} stories. ${accepted} accept, ${rejected} reject, ${pending} pending.`}>
+<Base active="/dash/ai-movers" title={`AI Movers · ${date}`} subtitle={`Twenty on the board. Keep ${target}. Reject swaps a reserve. Drag sets video order. ${accepted}/${target} keep, ${pending} open, ${reserveLeft} in reserve.`}>
+  <style>
+    .dash-board { display: flex; flex-direction: column; gap: 0.85rem; }
+    .dash-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.85rem 1rem;
+      align-items: start;
+      border: 1px solid oklch(var(--bc) / 0.18);
+      background: oklch(var(--b2));
+      padding: 0.9rem 1rem;
+    }
+    .dash-handle {
+      cursor: grab;
+      user-select: none;
+      color: oklch(var(--bc) / 0.45);
+      font-size: 1.1rem;
+      line-height: 1;
+      padding-top: 0.35rem;
+    }
+    .dash-handle:active { cursor: grabbing; }
+    .dash-card.is-dragging { opacity: 0.45; }
+    .dash-card.is-over { outline: 2px solid #e8d590; }
+    .dash-pos {
+      display: inline-block;
+      min-width: 1.75rem;
+      color: oklch(var(--bc) / 0.55);
+      font-size: 0.85rem;
+      margin-right: 0.35rem;
+    }
+    .dash-label {
+      display: inline-block;
+      margin-bottom: 0.35rem;
+      color: oklch(var(--bc) / 0.55);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .dash-hook {
+      margin: 0;
+      font-size: clamp(1.15rem, 2.2vw, 1.55rem);
+      font-weight: 650;
+      line-height: 1.25;
+      letter-spacing: -0.01em;
+    }
+    .dash-hook-mark {
+      background: #e8d590;
+      color: #111;
+      padding: 0 0.18em;
+      border-radius: 0;
+    }
+    .dash-look {
+      margin: 0.45rem 0 0;
+      color: oklch(var(--bc) / 0.7);
+      font-size: 0.92rem;
+    }
+    .dash-sources {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.45rem;
+    }
+    .dash-source {
+      border: 1px solid oklch(var(--bc) / 0.2);
+      padding: 0.12rem 0.4rem;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: oklch(var(--bc) / 0.65);
+    }
+    .dash-link {
+      display: inline-block;
+      margin-top: 0.35rem;
+      font-size: 0.8rem;
+      overflow-wrap: anywhere;
+    }
+    .dash-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      min-width: 6.5rem;
+    }
+    .dash-actions .btn.is-on {
+      background: #e8d590;
+      border-color: #e8d590;
+      color: #111;
+    }
+    .dash-actions .btn.is-on-reject {
+      background: #d9645c;
+      border-color: #d9645c;
+      color: #fff;
+    }
+  </style>
+
   <p class="mb-4 text-sm">
     <a class="link link-hover" href="/dash/ai-movers">All days</a>
+    <span class="mx-2 opacity-40">·</span>
+    Order here is the video order. Aim for {target} accepts.
   </p>
-  <div class="overflow-x-auto">
-    <table class="table table-sm" data-day={date}>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Story</th>
-          <th>Beat</th>
-          <th>State</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(row => (
-          <tr data-story-id={row.story.id}>
-            <td>{row.story.rank}</td>
-            <td>
-              <div class="font-medium">{row.story.title}</div>
-              {row.story.urls[0] && (
-                <a class="link link-hover text-xs break-all" href={row.story.urls[0]} target="_blank" rel="noopener noreferrer">{row.story.urls[0]}</a>
-              )}
-            </td>
-            <td>{row.story.beat || '-'}</td>
-            <td data-state>{row.decision?.verdict || 'pending'}</td>
-            <td class="whitespace-nowrap">
-              <button class="btn btn-xs" type="button" data-verdict="accept">Accept</button>
-              <button class="btn btn-xs btn-ghost" type="button" data-verdict="reject">Reject</button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+
+  <div class="dash-board" data-day={date} data-board data-target={target}>
+    {rows.map(row => (
+      <article
+        class="dash-card"
+        data-story-id={row.story.id}
+        data-verdict={row.decision?.verdict || ''}
+        draggable="true"
+      >
+        <div class="dash-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</div>
+        <div>
+          <div class="dash-label"><span class="dash-pos" data-pos>{row.position}</span>{row.story.label}</div>
+          <h2 class="dash-hook" set:html={renderHookHtml(row.story.hook)} />
+          <p class="dash-look">{row.story.look}</p>
+          {(row.story.sources || []).length > 0 && (
+            <div class="dash-sources" data-sources>
+              {row.story.sources.map(source => (
+                <span class="dash-source">{source}</span>
+              ))}
+            </div>
+          )}
+          {row.story.urls[0] && (
+            <a class="dash-link link link-hover" href={row.story.urls[0]} target="_blank" rel="noopener noreferrer">{row.story.urls[0]}</a>
+          )}
+        </div>
+        <div class="dash-actions">
+          <button
+            class:list={['btn', 'btn-sm', row.decision?.verdict === 'accept' && 'is-on']}
+            type="button"
+            data-verdict="accept"
+          >Accept</button>
+          <button
+            class:list={['btn', 'btn-sm', 'btn-ghost', row.decision?.verdict === 'reject' && 'is-on-reject']}
+            type="button"
+            data-verdict="reject"
+          >Reject</button>
+        </div>
+      </article>
+    ))}
   </div>
+
+  <template id="dash-card-template">
+    <article class="dash-card" data-story-id="" data-verdict="" draggable="true">
+      <div class="dash-handle" title="Drag to reorder" aria-label="Drag to reorder">⠿</div>
+      <div>
+        <div class="dash-label"><span class="dash-pos" data-pos>0</span><span data-label></span></div>
+        <h2 class="dash-hook" data-hook></h2>
+        <p class="dash-look" data-look></p>
+        <div class="dash-sources" data-sources></div>
+        <a class="dash-link link link-hover" data-url href="#" target="_blank" rel="noopener noreferrer"></a>
+      </div>
+      <div class="dash-actions">
+        <button class="btn btn-sm" type="button" data-verdict="accept">Accept</button>
+        <button class="btn btn-sm btn-ghost" type="button" data-verdict="reject">Reject</button>
+      </div>
+    </article>
+  </template>
+
   <script is:inline>
     (() => {
-      const table = document.querySelector('table[data-day]');
-      if (!table) return;
-      const date = table.getAttribute('data-day');
-      table.addEventListener('click', async (event) => {
+      const board = document.querySelector('[data-board]');
+      if (!board) return;
+      const date = board.getAttribute('data-day');
+      const template = document.getElementById('dash-card-template');
+      let dragId = '';
+
+      const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[char]);
+
+      const renderHook = (hook) => escapeHtml(hook).replace(/\[([^\]]+)\]/g, '<mark class="dash-hook-mark">$1</mark>');
+
+      const cards = () => [...board.querySelectorAll('[data-story-id]')];
+
+      const renumber = () => {
+        cards().forEach((card, index) => {
+          const pos = card.querySelector('[data-pos]');
+          if (pos) pos.textContent = String(index + 1);
+        });
+      };
+
+      const paintVerdict = (card, verdict) => {
+        card.setAttribute('data-verdict', verdict || '');
+        card.querySelectorAll('button[data-verdict]').forEach((button) => {
+          const value = button.getAttribute('data-verdict');
+          button.classList.toggle('is-on', value === 'accept' && verdict === 'accept');
+          button.classList.toggle('is-on-reject', value === 'reject' && verdict === 'reject');
+          button.classList.toggle('btn-ghost', !(value === 'reject' && verdict === 'reject'));
+        });
+      };
+
+      const fillCard = (card, story) => {
+        card.setAttribute('data-story-id', story.id);
+        card.setAttribute('data-verdict', '');
+        card.querySelector('[data-label]').textContent = story.label || 'STORY';
+        card.querySelector('[data-hook]').innerHTML = renderHook(story.hook || story.title || '');
+        card.querySelector('[data-look]').textContent = story.look || '';
+        const sources = card.querySelector('[data-sources]');
+        sources.innerHTML = '';
+        for (const source of story.sources || []) {
+          const span = document.createElement('span');
+          span.className = 'dash-source';
+          span.textContent = source;
+          sources.appendChild(span);
+        }
+        const link = card.querySelector('[data-url]');
+        if (story.urls && story.urls[0]) {
+          link.href = story.urls[0];
+          link.textContent = story.urls[0];
+          link.hidden = false;
+        } else {
+          link.hidden = true;
+        }
+        paintVerdict(card, '');
+        return card;
+      };
+
+      const saveOrder = async () => {
+        const order = cards().map((card) => card.getAttribute('data-story-id'));
+        const response = await fetch(`/dash/ai-movers/${date}/order`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Order save failed');
+      };
+
+      const saveVerdict = async (storyId, verdict, clear) => {
+        const response = await fetch(`/dash/ai-movers/${date}/decisions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(clear ? { storyId, clear: true } : { storyId, verdict }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Save failed');
+        return payload;
+      };
+
+      board.addEventListener('click', async (event) => {
         const button = event.target.closest('button[data-verdict]');
         if (!button) return;
-        const row = button.closest('tr[data-story-id]');
-        if (!row) return;
-        const storyId = row.getAttribute('data-story-id');
+        const card = button.closest('[data-story-id]');
+        if (!card) return;
+        const storyId = card.getAttribute('data-story-id');
         const verdict = button.getAttribute('data-verdict');
+        const current = card.getAttribute('data-verdict') || '';
+        const clear = current === verdict;
         button.disabled = true;
         try {
-          const response = await fetch(`/dash/ai-movers/${date}/decisions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ storyId, verdict }),
-          });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || 'Save failed');
-          const state = row.querySelector('[data-state]');
-          if (state) state.textContent = verdict;
+          const payload = await saveVerdict(storyId, verdict, clear);
+          if (!clear && verdict === 'reject') {
+            if (payload.replacement && template) {
+              const next = fillCard(template.content.firstElementChild.cloneNode(true), payload.replacement);
+              card.replaceWith(next);
+              renumber();
+              await saveOrder();
+            } else {
+              card.remove();
+              renumber();
+              await saveOrder();
+            }
+          } else {
+            paintVerdict(card, clear ? '' : verdict);
+          }
         } catch (error) {
           alert(error.message || 'Save failed');
         } finally {
           button.disabled = false;
+        }
+      });
+
+      board.addEventListener('dragstart', (event) => {
+        const card = event.target.closest('[data-story-id]');
+        if (!card) return;
+        dragId = card.getAttribute('data-story-id') || '';
+        card.classList.add('is-dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', dragId);
+      });
+
+      board.addEventListener('dragend', (event) => {
+        const card = event.target.closest('[data-story-id]');
+        if (card) card.classList.remove('is-dragging');
+        board.querySelectorAll('.is-over').forEach((node) => node.classList.remove('is-over'));
+        dragId = '';
+      });
+
+      board.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        const over = event.target.closest('[data-story-id]');
+        if (!over || over.getAttribute('data-story-id') === dragId) return;
+        board.querySelectorAll('.is-over').forEach((node) => node.classList.remove('is-over'));
+        over.classList.add('is-over');
+        const dragging = board.querySelector(`[data-story-id="${dragId}"]`);
+        if (!dragging || dragging === over) return;
+        const list = cards();
+        const from = list.indexOf(dragging);
+        const to = list.indexOf(over);
+        if (from < 0 || to < 0 || from === to) return;
+        if (from < to) over.after(dragging);
+        else over.before(dragging);
+        renumber();
+      });
+
+      board.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        board.querySelectorAll('.is-over').forEach((node) => node.classList.remove('is-over'));
+        renumber();
+        try {
+          await saveOrder();
+        } catch (error) {
+          alert(error.message || 'Order save failed');
+          location.reload();
         }
       });
     })();

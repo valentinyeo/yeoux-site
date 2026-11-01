@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- AI Movers day board shows twenty candidates with source labels, hook headlines, and drag order.
+- Reject swaps the next reserve onto the board so the sheet stays full while aiming for fifteen keeps.
+- Catalog stores shown stories plus reserves and skips prior-day entities on reseeds.
+
 ## 0.1.2
 
 - Add `npm run ship` to check a clean origin/main, deploy only to Yeo UX with the commit message, and verify the live Zero Trust redirect.

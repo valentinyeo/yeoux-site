@@ -2,10 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   accessEmail,
+  applyRejectSwap,
   catalogKey,
   decisionsKey,
   emptyDecisionFile,
   getCatalog,
+  hookFromTitle,
   listDashboardDates,
   mergeDecision,
   parseDayCatalog,
@@ -14,6 +16,7 @@ import {
   postDecision,
   putCatalog,
   reviewRows,
+  sourceLabels,
 } from '../src/lib/dash.mjs';
 
 function memoryBucket() {
@@ -68,13 +71,65 @@ test('dash keys stay under the dash prefix', () => {
   assert.equal(decisionsKey('ai-movers', '2026-11-01'), 'd/ai-movers/2026-11-01/decisions.json');
 });
 
-test('catalog parse keeps at most 100 stories and brands ids', () => {
-  const { catalog, error } = parseDayCatalog(sampleCatalog, '2026-11-01');
+test('catalog parse keeps hooks sources reserves and brands ids', () => {
+  const { catalog, error } = parseDayCatalog({
+    ...sampleCatalog,
+    stories: sampleCatalog.stories.map(row => ({
+      ...row,
+      signals: [{ source: 'github', metric: 'stars', value: 10 }],
+    })),
+    reserves: [{
+      id: 'cccccccccccccccc',
+      rank: 3,
+      beat: 'tool',
+      title: 'Reserve tool',
+      entity: 'product:reserve',
+      urls: ['https://news.ycombinator.com/item?id=1'],
+      signals: [{ source: 'hn', metric: 'points', value: 40 }],
+      score: 4,
+      firstSeen: '2026-11-01T03:00:00.000Z',
+    }],
+  }, '2026-11-01');
   assert.equal(error, undefined);
   assert.equal(catalog.storyCount, 2);
   assert.equal(catalog.stories[0].id, 'aaaaaaaaaaaaaaaa');
+  assert.equal(catalog.stories[0].sources[0], 'GitHub');
+  assert.equal(catalog.reserves.length, 1);
+  assert.match(catalog.stories[0].hook, /\[/);
   assert.ok(parseDayCatalog({ ...sampleCatalog, date: '2026-10-31' }, '2026-11-01').error);
-  assert.ok(parseDayCatalog({ ...sampleCatalog, stories: Array(101).fill(sampleCatalog.stories[0]) }, '2026-11-01').error);
+  assert.ok(parseDayCatalog({ ...sampleCatalog, stories: Array(41).fill(sampleCatalog.stories[0]) }, '2026-11-01').error);
+});
+
+test('hook and source labels are readable', () => {
+  assert.equal(hookFromTitle('Claude Max plans renamed'), 'Claude Max plans [RENAMED]');
+  assert.deepEqual(sourceLabels([{ source: 'reddit', metric: 'comments', value: 12 }], []), ['Reddit']);
+  assert.deepEqual(sourceLabels([], ['https://x.com/claudeai/status/1']), ['X']);
+});
+
+test('reject swaps the next reserve into the board order', () => {
+  const { catalog } = parseDayCatalog({
+    ...sampleCatalog,
+    reserves: [{
+      id: 'cccccccccccccccc',
+      rank: 3,
+      beat: 'tool',
+      title: 'Reserve tool',
+      entity: 'product:reserve',
+      urls: ['https://example.com/r'],
+      score: 4,
+      firstSeen: '2026-11-01T03:00:00.000Z',
+    }],
+  }, '2026-11-01');
+  const base = emptyDecisionFile('2026-11-01');
+  const rejected = mergeDecision(base, { storyId: 'aaaaaaaaaaaaaaaa', verdict: 'reject' }, 'v@e.com', '2026-11-01T13:00:00.000Z');
+  const swapped = applyRejectSwap(rejected.file, catalog, 'aaaaaaaaaaaaaaaa', '2026-11-01T13:00:00.000Z');
+  assert.equal(swapped.removed, 'aaaaaaaaaaaaaaaa');
+  assert.equal(swapped.replacement.id, 'cccccccccccccccc');
+  assert.deepEqual(swapped.file.order, ['cccccccccccccccc', 'bbbbbbbbbbbbbbbb']);
+  const rows = reviewRows(catalog, swapped.file);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].story.id, 'cccccccccccccccc');
+  assert.equal(rows.every(row => row.decision?.verdict !== 'reject'), true);
 });
 
 test('decision write validates story id and verdict', () => {
@@ -174,6 +229,46 @@ test('decision POST needs Access identity and survives reload', async () => {
   const payload = await ok.json();
   assert.equal(payload.changed, true);
   assert.equal(payload.file.decisions.aaaaaaaaaaaaaaaa.verdict, 'accept');
+  await putCatalog(
+    bucket,
+    new Request('https://yeoux.net/dash/ai-movers/2026-11-01/catalog', {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer secret', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...sampleCatalog,
+        reserves: [{
+          id: 'cccccccccccccccc',
+          rank: 3,
+          beat: 'tool',
+          title: 'Reserve tool',
+          entity: 'product:reserve',
+          urls: ['https://example.com/r'],
+          score: 4,
+          firstSeen: '2026-11-01T03:00:00.000Z',
+        }],
+      }),
+    }),
+    'ai-movers',
+    '2026-11-01',
+    'secret',
+  );
+  const rejected = await postDecision(
+    bucket,
+    new Request('https://yeoux.net/dash/ai-movers/2026-11-01/decisions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cf-Access-Authenticated-User-Email': 'valentin@example.com',
+      },
+      body: JSON.stringify({ storyId: 'bbbbbbbbbbbbbbbb', verdict: 'reject' }),
+    }),
+    'ai-movers',
+    '2026-11-01',
+  );
+  const rejectPayload = await rejected.json();
+  assert.equal(rejectPayload.changed, true);
+  assert.equal(rejectPayload.replacement.id, 'cccccccccccccccc');
+  assert.deepEqual(rejectPayload.file.order, ['aaaaaaaaaaaaaaaa', 'cccccccccccccccc']);
   const again = await postDecision(
     bucket,
     new Request('https://yeoux.net/dash/ai-movers/2026-11-01/decisions', {
