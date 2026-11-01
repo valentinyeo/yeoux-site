@@ -1,0 +1,16 @@
+---
+import Base from '../../layouts/Base.astro';
+import { DASHBOARDS } from '../../lib/dash.mjs';
+
+const boards = Object.values(DASHBOARDS);
+---
+<Base active="/dash" title="Dash" subtitle="Interactive dashboards. Separate from explorations and reports.">
+  <ul class="space-y-4">
+    {boards.map(board => (
+      <li>
+        <a class="link link-hover text-lg font-semibold" href={`/dash/${board.id}`}>{board.title}</a>
+        <p class="mt-1 text-sm text-base-content/60">{board.blurb}</p>
+      </li>
+    ))}
+  </ul>
+</Base>

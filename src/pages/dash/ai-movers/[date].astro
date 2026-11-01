@@ -1,0 +1,105 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import {
+  catalogKey,
+  decisionsKey,
+  emptyDecisionFile,
+  isUtcDate,
+  parseDayCatalog,
+  parseDecisionFile,
+  readJson,
+  reviewRows,
+} from '../../../lib/dash.mjs';
+
+export const prerender = false;
+
+const date = Astro.params.date || '';
+if (!isUtcDate(date)) {
+  return new Response('Not found', { status: 404 });
+}
+
+const catalogRaw = await readJson(env.CONTENT, catalogKey('ai-movers', date));
+if (catalogRaw == null || catalogRaw.error) {
+  return new Response('Not found', { status: 404 });
+}
+const { catalog, error: catalogError } = parseDayCatalog(catalogRaw, date);
+if (catalogError || !catalog) {
+  return new Response('Catalog invalid', { status: 500 });
+}
+
+const decisionsRaw = await readJson(env.CONTENT, decisionsKey('ai-movers', date));
+const { file } = parseDecisionFile(decisionsRaw && !decisionsRaw.error ? decisionsRaw : null, date);
+const rows = reviewRows(catalog, file || emptyDecisionFile(date));
+const accepted = rows.filter(row => row.decision?.verdict === 'accept').length;
+const rejected = rows.filter(row => row.decision?.verdict === 'reject').length;
+const pending = rows.length - accepted - rejected;
+---
+<Base active="/dash/ai-movers" title={`AI Movers · ${date}`} subtitle={`${rows.length} stories. ${accepted} accept, ${rejected} reject, ${pending} pending.`}>
+  <p class="mb-4 text-sm">
+    <a class="link link-hover" href="/dash/ai-movers">All days</a>
+  </p>
+  <div class="overflow-x-auto">
+    <table class="table table-sm" data-day={date}>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Story</th>
+          <th>Beat</th>
+          <th>State</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(row => (
+          <tr data-story-id={row.story.id}>
+            <td>{row.story.rank}</td>
+            <td>
+              <div class="font-medium">{row.story.title}</div>
+              {row.story.urls[0] && (
+                <a class="link link-hover text-xs break-all" href={row.story.urls[0]} target="_blank" rel="noopener noreferrer">{row.story.urls[0]}</a>
+              )}
+            </td>
+            <td>{row.story.beat || '-'}</td>
+            <td data-state>{row.decision?.verdict || 'pending'}</td>
+            <td class="whitespace-nowrap">
+              <button class="btn btn-xs" type="button" data-verdict="accept">Accept</button>
+              <button class="btn btn-xs btn-ghost" type="button" data-verdict="reject">Reject</button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+  <script is:inline>
+    (() => {
+      const table = document.querySelector('table[data-day]');
+      if (!table) return;
+      const date = table.getAttribute('data-day');
+      table.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-verdict]');
+        if (!button) return;
+        const row = button.closest('tr[data-story-id]');
+        if (!row) return;
+        const storyId = row.getAttribute('data-story-id');
+        const verdict = button.getAttribute('data-verdict');
+        button.disabled = true;
+        try {
+          const response = await fetch(`/dash/ai-movers/${date}/decisions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ storyId, verdict }),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Save failed');
+          const state = row.querySelector('[data-state]');
+          if (state) state.textContent = verdict;
+        } catch (error) {
+          alert(error.message || 'Save failed');
+        } finally {
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
+</Base>

@@ -1,0 +1,23 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import { DASHBOARDS, listDashboardDates } from '../../../lib/dash.mjs';
+
+export const prerender = false;
+
+const board = DASHBOARDS['ai-movers'];
+const dates = await listDashboardDates(env.CONTENT, 'ai-movers');
+---
+<Base active="/dash/ai-movers" title={board.title} subtitle={board.blurb}>
+  {dates.length === 0 ? (
+    <p class="text-sm text-base-content/60">No research days published yet.</p>
+  ) : (
+    <ul class="space-y-2">
+      {dates.map(date => (
+        <li>
+          <a class="link link-hover font-medium" href={`/dash/ai-movers/${date}`}>{date}</a>
+        </li>
+      ))}
+    </ul>
+  )}
+</Base>
