@@ -134,8 +134,12 @@ export function sourceLabels(signals = [], urls = []) {
   const labels = [];
   const seen = new Set();
   for (const row of Array.isArray(signals) ? signals : []) {
-    const family = String(row?.source || '').split(':')[0].toLowerCase();
-    const label = SOURCE_NAMES[family] || (family ? family : '');
+    const [familyRaw, detailRaw = ''] = String(row?.source || '').split(':');
+    const family = familyRaw.toLowerCase();
+    const detail = detailRaw.trim();
+    const label = family === 'company' && detail
+      ? detail
+      : (SOURCE_NAMES[family] || (family ? family : ''));
     if (!label || seen.has(label)) continue;
     seen.add(label);
     labels.push(label);
