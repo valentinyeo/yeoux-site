@@ -17,12 +17,11 @@ a { text-underline-offset: .2em; }
 .ht-nav details { margin: 0; padding: 0; position: relative; border: 0; background: transparent; }
 .ht-nav summary { list-style: none; }
 .ht-nav summary::-webkit-details-marker { display: none; }
-.ht-desktop summary::after { content: ''; width: .35rem; height: .35rem; border-right: 1.5px solid; border-bottom: 1.5px solid; transform: rotate(45deg); margin: -.2rem .25rem 0; }
-.ht-nav .ht-desktop { display: flex; align-items: center; flex-wrap: wrap; margin-left: auto; }
-.ht-desktop details > ul, .ht-mobile > ul { position: absolute; top: calc(100% + .5rem); right: 0; width: 15rem; max-height: 70vh; overflow-y: auto; padding: .375rem; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: .5rem; box-shadow: 0 .5rem 1.5rem #0002; }
+.ht-mobile > ul { position: absolute; top: calc(100% + .5rem); left: 0; width: min(19rem, calc(100vw - 3rem)); max-height: 70vh; overflow-y: auto; padding: .375rem; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: .5rem; box-shadow: 0 .5rem 1.5rem #0002; }
 .ht-nav [aria-current='page'], .ht-nav .ht-current { background: var(--color-base-200); color: var(--color-primary); }
-.ht-nav .ht-mobile { display: none; }
-.ht-theme-toggle { justify-content: center; flex: 0 0 2.75rem; width: 2.75rem; height: 2.75rem; }
+.ht-nav .ht-mobile { display: block; }
+.ht-nav .ht-heading { padding: .75rem .625rem .25rem; color: var(--color-muted); font-size: .75rem; font-weight: 700; }
+.ht-theme-toggle { margin-left: auto; justify-content: center; flex: 0 0 2.75rem; width: 2.75rem; height: 2.75rem; }
 .ht-theme-toggle svg, .ht-mobile > summary svg { width: 1.25rem; height: 1.25rem; }
 .ht-sun, [data-theme='dark'] .ht-moon { display: none; }
 [data-theme='dark'] .ht-sun { display: block; }
@@ -43,18 +42,5 @@ a { text-underline-offset: .2em; }
 .ht-button:hover { background: var(--color-base-200); }
 @media (min-width: 640px) { .ht-shell { padding-inline: 1.5rem; } }
 @media (min-width: 1024px) { .ht-shell { padding-inline: 2rem; } }
-@media (min-width: 640px) and (max-width: 959px) {
-  .ht-nav .ht-desktop { order: 3; flex: 1 0 100%; justify-content: flex-start; }
-  .ht-theme-toggle { margin-left: auto; }
-  .ht-desktop details > ul { left: 0; right: auto; }
-}
-@media (max-width: 639px) {
-  .ht-nav .ht-desktop { display: none; }
-  .ht-nav .ht-mobile { display: block; }
-  .ht-mobile > ul { left: 0; right: auto; width: min(19rem, calc(100vw - 3rem)); }
-  .ht-mobile-items details > ul { margin-left: .75rem; }
-  .ht-mobile-items summary { font-weight: 700; }
-  .ht-theme-toggle { margin-left: auto; }
-}
 @media print { .ht-nav { display: none; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }

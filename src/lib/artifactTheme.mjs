@@ -8,7 +8,7 @@ const attr = (node, name) => node.attrs?.find(attribute => attribute.name === na
 const supportedCharset = value => !value || /^(?:utf-?8|us-ascii)$/i.test(value.trim());
 const headerCharset = value => /charset\s*=\s*["']?([^;\s"']+)/i.exec(value)?.[1];
 
-export function themeArtifactHtml(source, active = '/explorations') {
+export function themeArtifactHtml(source, active = '/explorations', core) {
   const document = parse(source);
   const html = document.childNodes.find(node => node.tagName === 'html');
   const head = html.childNodes.find(node => node.tagName === 'head');
@@ -33,13 +33,13 @@ export function themeArtifactHtml(source, active = '/explorations') {
   const headNodes = parseFragment(viewport + assets).childNodes;
   headNodes.forEach(node => { node.parentNode = head; });
   head.childNodes.push(...headNodes);
-  const navNodes = parseFragment(marker + siteNavigation(active)).childNodes;
+  const navNodes = parseFragment(marker + siteNavigation(active, core)).childNodes;
   navNodes.forEach(node => { node.parentNode = body; });
   body.childNodes.unshift(...navNodes);
   return serialize(document);
 }
 
-export async function withArtifactTheme(response, active) {
+export async function withArtifactTheme(response, active, core) {
   if (!response.ok || response.body === null) return response;
   const type = response.headers.get('Content-Type') || '';
   if (!/^text\/html(?:\s*;|\s*$)/i.test(type) || !supportedCharset(headerCharset(type))) return response;
@@ -58,7 +58,7 @@ export async function withArtifactTheme(response, active) {
         });
       } })
       .on('body', { element(element) {
-        if (!themed) element.prepend(marker + siteNavigation(active), { html: true });
+        if (!themed) element.prepend(marker + siteNavigation(active, core), { html: true });
       } })
       .on('header.ht-site-nav', { element(element) { if (!themed) element.remove(); } })
       .transform(response);
@@ -68,7 +68,7 @@ export async function withArtifactTheme(response, active) {
   let source;
   try { source = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
   catch { return original(); }
-  const html = themeArtifactHtml(source, active);
+  const html = themeArtifactHtml(source, active, core);
   if (html === null) return original();
   const headers = new Headers(response.headers);
   headers.set('Content-Type', 'text/html; charset=utf-8');

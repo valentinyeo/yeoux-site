@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { CORE, resolveCore } from '../src/lib/coreReports.mjs';
+import { siteNavigation } from '../src/lib/siteNavigation.mjs';
+
+const items = [
+  { slug: 'aaaa1111-finance-triage-2026-11-07.html', title: 'Finance triage 2026-11-07' },
+  { slug: 'bbbb2222-finance-triage-2026-11-06.html', title: 'Finance triage 2026-11-06' },
+];
+
+test('core reports keep the agreed order and names, runners first', () => {
+  const names = CORE[0].items.slice(0, 4).map(entry => entry.name);
+  assert.deepEqual(names, ['Runners', 'Usage', 'Factory performance', 'CI performance']);
+});
+
+test('a dated report resolves to its newest page and an unpublished one is left out', () => {
+  const all = resolveCore(items).flatMap(cluster => cluster.items);
+  assert.equal(all.find(entry => entry.name === 'Finance triage').href, '/reports/aaaa1111-finance-triage-2026-11-07.html');
+  assert.ok(!all.some(entry => entry.name === 'CI performance'));
+  const published = resolveCore([...items, { slug: 'cccc3333-ci.html', title: 'CI performance' }]);
+  assert.equal(published[0].items[3].name, 'CI performance');
+});
+
+test('menu lists core reports at the top level, runners first, with no split', () => {
+  const html = siteNavigation('/reports/a41914ac-runner-board.html', resolveCore(items));
+  const links = [...html.matchAll(/<li><a href="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(links[0], '/reports/a41914ac-runner-board.html');
+  assert.match(html, /<a href="\/reports\/a41914ac-runner-board.html" aria-current="page">Runners</);
+  assert.doesNotMatch(html, /<a href="\/reports" aria-current/);
+});
