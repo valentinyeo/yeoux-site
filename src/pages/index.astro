@@ -11,7 +11,7 @@ const [core, reports] = await Promise.all([
   listAll(env.CONTENT, prefix).then(objects => indexItems(objects, prefix)),
 ]);
 ---
-<Base active="/" title="Yeo UX" subtitle="Your reports, one tap away.">
+<Base active="/" title="Yeo UX">
   {core.map(cluster => (
     <section class="mb-8">
       <h2 class="mb-3 text-lg font-semibold">{cluster.title}</h2>
@@ -20,7 +20,6 @@ const [core, reports] = await Promise.all([
           <li>
             <a class="block min-h-11 rounded-box border border-base-300 p-3 hover:bg-base-200" href={entry.href}>
               <span class="block font-semibold">{entry.name}</span>
-              <span class="mt-1 block text-sm text-base-content/60">{entry.line}</span>
             </a>
           </li>
         ))}

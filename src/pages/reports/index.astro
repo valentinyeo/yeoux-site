@@ -4,9 +4,9 @@ import Base from '../../layouts/Base.astro';
 import ItemTable from '../../components/ItemTable.astro';
 import { SECTIONS, indexItems, listAll } from '../../lib/content.mjs';
 
-const { prefix, title, blurb } = SECTIONS.reports;
+const { prefix, title } = SECTIONS.reports;
 const items = indexItems(await listAll(env.CONTENT, prefix), prefix);
 ---
-<Base active="/reports" title={title} subtitle={`${items.length} items. ${blurb}`}>
+<Base active="/reports" title={title} subtitle={`${items.length}`}>
   <ItemTable items={items} section="reports" />
 </Base>
