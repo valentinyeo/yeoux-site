@@ -2,16 +2,16 @@ import { SECTIONS, indexItems, listAll } from './content.mjs';
 
 export const CORE = [
   { title: 'Software Factory', items: [
-    { name: 'Runners', line: 'Who is building what right now, and who is idle.', href: '/reports/a41914ac-runner-board.html' },
-    { name: 'Usage', line: 'How much of each Claude and Codex plan is used, against time.', href: '/reports/4180dee3-subscription-pacing.html' },
-    { name: 'Factory performance', line: 'Pull requests shipped and tickets handled, hour by hour.', href: '/reports/c65b9a8c-productivity.html' },
-    { name: 'CI performance', line: 'How long checks take and how often they fail.', match: '^CI performance' },
-    { name: 'Check wait', line: 'How long pull requests wait for their checks.', href: '/reports/eb9c1c8d-factory-check-wait.html' },
-    { name: 'Changes shipped', line: 'What went live, newest first.', href: '/reports/1f3069d2-shipping.html' },
+    { name: 'Runners', href: '/reports/a41914ac-runner-board.html' },
+    { name: 'Usage', href: '/reports/4180dee3-subscription-pacing.html' },
+    { name: 'Factory performance', href: '/reports/c65b9a8c-productivity.html' },
+    { name: 'CI performance', match: '^CI performance' },
+    { name: 'Check wait', href: '/reports/eb9c1c8d-factory-check-wait.html' },
+    { name: 'Changes shipped', href: '/reports/1f3069d2-shipping.html' },
   ] },
   { title: 'Money', items: [
-    { name: 'Finance triage', line: 'The latest morning money check.', match: '^Finance triage' },
-    { name: 'Cost monitor', line: 'Spend leaks, checked every hour.', href: '/reports/492a8f4d-cost-monitor.html' },
+    { name: 'Finance triage', match: '^Finance triage' },
+    { name: 'Cost monitor', href: '/reports/492a8f4d-cost-monitor.html' },
   ] },
 ];
 
@@ -25,7 +25,7 @@ export function resolveCore(items, core = CORE) {
   return core
     .map(cluster => ({
       title: cluster.title,
-      items: cluster.items.map(entry => ({ name: entry.name, line: entry.line, href: href(entry) })).filter(entry => entry.href),
+      items: cluster.items.map(entry => ({ name: entry.name, href: href(entry) })).filter(entry => entry.href),
     }))
     .filter(cluster => cluster.items.length);
 }

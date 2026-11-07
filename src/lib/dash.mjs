@@ -37,7 +37,6 @@ export const DASHBOARDS = {
   'ai-movers': {
     id: 'ai-movers',
     title: 'AI Movers',
-    blurb: 'Twenty candidates. Keep fifteen for the video. Reject swaps in the next reserve. Drag sets script order.',
   },
 };
 

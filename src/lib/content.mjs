@@ -1,6 +1,6 @@
 export const SECTIONS = {
-  explorations: { prefix: 'x/', title: 'Explorations', blurb: 'Research, plans and experiments, newest first.' },
-  reports: { prefix: 'r/', title: 'Reports', blurb: 'Finished reports and status pages, newest first.' },
+  explorations: { prefix: 'x/', title: 'Explorations' },
+  reports: { prefix: 'r/', title: 'Reports' },
 };
 
 const SLUG_PATTERN = /^[A-Za-z0-9._-]{1,120}$/;
