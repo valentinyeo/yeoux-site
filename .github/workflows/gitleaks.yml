@@ -18,7 +18,7 @@ permissions:
 jobs:
   secret-scan:
     name: secret-scan
-    runs-on: [self-hosted, contabo, yeoux]
+    runs-on: ubuntu-latest
     if: github.event_name != 'push' || !github.event.deleted
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

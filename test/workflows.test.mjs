@@ -11,45 +11,37 @@ function checkWorkflow(source, file) {
   for (const [name, job] of jobs) {
     const context = `${file}: job ${name}`;
     assert.ok(job && typeof job === 'object' && !Array.isArray(job), `${context}: job must be a mapping`);
-    assert.ok(!Object.hasOwn(job, 'uses'), `${context}: reusable-workflow runner cannot be inspected`);
-    const labels = job['runs-on'];
-    assert.ok(Array.isArray(labels), `${context}: runs-on must be a literal label array`);
+    if (Object.hasOwn(job, 'uses')) continue;
+    const labels = [job['runs-on']].flat();
+    assert.ok(labels.length > 0 && labels.every(label => typeof label === 'string' && label.trim()), `${context}: runs-on must be literal strings`);
     for (const label of labels) {
-      assert.ok(typeof label === 'string' && label.trim() && !label.includes('${{'), `${context}: runs-on labels must be literal strings`);
-      assert.doesNotMatch(label, /^(?:ubuntu|windows|macos)(?:-|$)/i, `${context}: GitHub-hosted runner label is forbidden`);
+      assert.ok(!label.includes('${{'), `${context}: runs-on labels must be literal strings`);
+      assert.doesNotMatch(label, /self-hosted|contabo|yeoux/i, `${context}: CI on the VPS is forbidden, use a GitHub-hosted runner`);
     }
-    for (const label of ['self-hosted', 'contabo', 'yeoux']) {
-      assert.ok(labels.includes(label), `${context}: runs-on must include ${label}`);
-    }
+    assert.ok(labels.some(label => /^(?:ubuntu|windows|macos)(?:-|$)/i.test(label)), `${context}: runs-on must be a GitHub-hosted runner`);
   }
 }
 
-test('every executable workflow job uses the Yeo UX self-hosted runner', () => {
+test('every executable workflow job uses a GitHub-hosted runner', () => {
   const directory = new URL('../.github/workflows/', import.meta.url);
   const files = readdirSync(directory).filter(file => /\.ya?ml$/.test(file));
   assert.ok(files.length > 0, 'no workflow YAML files found');
   for (const file of files) checkWorkflow(readFileSync(new URL(file, directory), 'utf8'), file);
 });
 
-test('workflow runner policy accepts self-hosted jobs and rejects unsafe runner values', () => {
+test('workflow runner policy accepts hosted jobs and rejects self-hosted runner values', () => {
   const checkJob = source => checkWorkflow(`jobs:\n  control:\n${source}\n`, 'control.yml');
-  assert.doesNotThrow(() => checkJob('    runs-on: [self-hosted, contabo, yeoux]'));
+  assert.doesNotThrow(() => checkJob('    runs-on: ubuntu-latest'));
+  assert.doesNotThrow(() => checkJob('    runs-on: [ubuntu-24.04]'));
   for (const [source, message] of [
-    ['    runs-on: ubuntu-latest', /literal label array/],
-    ['    runs-on: [self-hosted, contabo, yeoux, windows-latest]', /GitHub-hosted/],
-    ['    runs-on: [self-hosted, contabo, yeoux, macos-15]', /GitHub-hosted/],
-    ['    runs-on: [self-hosted, contabo, yeoux, ubuntu-24.04]', /GitHub-hosted/],
-    ['    runs-on: [self-hosted, contabo]', /include yeoux/],
-    ['    runs-on: [self-hosted, yeoux]', /include contabo/],
-    ['    runs-on: [contabo, yeoux]', /include self-hosted/],
-    ['    runs-on: ${{ matrix.runner }}', /literal label array/],
-    ['    runs-on: [self-hosted, contabo, yeoux, "${{ matrix.runner }}"]', /literal strings/],
-    ['    runs-on: {group: yeoux}', /literal label array/],
-    ['    runs-on: [self-hosted, contabo, yeoux, 22]', /literal strings/],
-    ['    runs-on: []', /include self-hosted/],
-    ['    steps: []', /literal label array/],
-    ['    uses: owner/repo/.github/workflows/shared.yml@main', /reusable-workflow/],
-    ['    uses: owner/repo/.github/workflows/shared.yml@main\n    runs-on: [self-hosted, contabo, yeoux]', /reusable-workflow/],
+    ['    runs-on: [self-hosted, contabo, yeoux]', /forbidden/],
+    ['    runs-on: [self-hosted, ubuntu-latest]', /forbidden/],
+    ['    runs-on: self-hosted', /forbidden/],
+    ['    runs-on: ${{ matrix.runner }}', /literal strings/],
+    ['    runs-on: [ubuntu-latest, "${{ matrix.runner }}"]', /literal strings/],
+    ['    runs-on: []', /literal strings/],
+    ['    runs-on: custom-label', /GitHub-hosted/],
+    ['    steps: []', /literal strings/],
   ]) {
     assert.throws(() => checkJob(source), message);
   }
