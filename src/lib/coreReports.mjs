@@ -8,6 +8,7 @@ export const CORE = [
     { name: 'CI performance', line: 'How long checks take and how often they fail.', match: '^CI performance' },
     { name: 'Check wait', line: 'How long pull requests wait for their checks.', href: '/reports/eb9c1c8d-factory-check-wait.html' },
     { name: 'Changes shipped', line: 'What went live, newest first.', href: '/reports/1f3069d2-shipping.html' },
+    { name: 'Fleet plan', line: 'The active factory design and who is in it.', href: '/reports/38361bb7-fleet-shape.html' },
   ] },
   { title: 'Money', items: [
     { name: 'Finance triage', line: 'The latest morning money check.', match: '^Finance triage' },
