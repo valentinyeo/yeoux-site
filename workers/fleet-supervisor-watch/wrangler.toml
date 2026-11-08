@@ -1,0 +1,20 @@
+name = "fleet-supervisor-watch"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+account_id = "7865043d9ae730882b77f3d5d670c158"
+workers_dev = true
+
+[[routes]]
+pattern = "yeoux.net/fleet-supervisor-watch*"
+zone_name = "yeoux.net"
+
+[[kv_namespaces]]
+binding = "FLEET_SUPERVISOR_KV"
+id = "c2d9951e4f1245b091dbb4ee9007ba8b"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+ALERT_EMAIL_TO = "valentin.yeo@gmail.com"
+SLACK_CHANNEL_ID = "C0CCT17T8A0"
