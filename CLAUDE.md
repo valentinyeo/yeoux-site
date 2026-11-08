@@ -21,8 +21,9 @@ npm ci && npm run check && npm run build
 
 ## Ship
 
-Run `npm run ship` from a clean main after the PR merges.
-It runs the same checks as CI, deploys only to the Yeo UX account, stamps the deploy with the commit, and checks the live site is behind Zero Trust.
+Merge to main. `.github/workflows/deploy.yml` deploys on a GitHub-hosted runner. Never build or deploy on this VPS.
+It runs `npm run ship` there: same checks as CI, deploys only to the Yeo UX account with repo secret `CLOUDFLARE_API_TOKEN`, stamps the commit, checks Zero Trust. Locally `npm run ship` refuses.
+Redeploy main: `gh workflow run deploy.yml -R valentinyeo/yeoux-site`.
 
 ## Rules and what enforces them
 
@@ -34,7 +35,7 @@ It runs the same checks as CI, deploys only to the Yeo UX account, stamps the de
 | Live migration gates fail on empty sources and on any non-200 page; no vacuous PASS | `test/gates.test.mjs` in `tests` |
 | yeoshare reads keys only through yeo-key | `test/yeoshare.test.mjs` |
 | Cloudflare account Yeo UX `7865043d9ae730882b77f3d5d670c158` only | `wrangler.toml` |
-| Deploy only from a clean origin/main | `tools/ship.mjs` |
+| Deploy only from a clean origin/main, only on a GitHub-hosted runner | `tools/ship.mjs` |
 | CLAUDE.md names only real commands and files | `test/claude-md.test.mjs` |
 | Workflow jobs run on GitHub-hosted runners, never this VPS | `test/workflows.test.mjs` in `tests` |
-| Ship only through `npm run ship`; no raw deploy npm script | `test/ship.test.mjs` in `tests` |
+| Ship only through the Deploy workflow running `npm run ship`; no raw deploy npm script | `test/ship.test.mjs` in `tests` |
