@@ -61,8 +61,13 @@ async function checkSilence(env: Env): Promise<void> {
     const raw = await env.FLEET_SUPERVISOR_KV.get(`hb:${id}`);
     const last = raw ? Number(raw) : 0;
     if (!last || now - last < SILENCE_MS) continue;
+    // A drill is a one-off test: it alarms once, then the key is dropped so it never repeats.
+    if (id === "drill" && (await env.FLEET_SUPERVISOR_KV.get(`alarm:${id}`))) {
+      await env.FLEET_SUPERVISOR_KV.delete(`hb:${id}`);
+      continue;
+    }
     const alarmAt = await env.FLEET_SUPERVISOR_KV.get(`alarm:${id}`);
-    if (alarmAt && now - Number(alarmAt) < SILENCE_MS) continue;
+    if (alarmAt && now - Number(alarmAt) < 4 * SILENCE_MS) continue;
     await alarm(env, id, now - last);
     await env.FLEET_SUPERVISOR_KV.put(`alarm:${id}`, String(now));
   }
