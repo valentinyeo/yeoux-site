@@ -4,13 +4,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ACCOUNT = '7865043d9ae730882b77f3d5d670c158';
+export const WORKFLOW = '.github/workflows/deploy.yml';
 
-export async function main(run = execFileSync, fetchImpl = fetch) {
+export async function main(run = execFileSync, fetchImpl = fetch, env = process.env) {
+  if (env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted') {
+    throw new Error(`deploys run only on GitHub-hosted runners, never on this VPS. Merge to main and ${WORKFLOW} checks, builds and deploys`);
+  }
+  if (!env.CLOUDFLARE_API_TOKEN) throw new Error('CLOUDFLARE_API_TOKEN repo secret is missing');
   const command = (file, args, options = {}) => {
     try {
       return run(file, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], ...options });
     } catch {
-      throw new Error(`${file} ${file === 'yeo-key' ? 'deployment/status' : args.join(' ')} failed`);
+      throw new Error(`${file} ${args.join(' ')} failed`);
     }
   };
   command('git', ['fetch', 'origin'], { stdio: 'inherit' });
@@ -25,12 +30,9 @@ export async function main(run = execFileSync, fetchImpl = fetch) {
   command('npm', ['run', 'check'], { stdio: 'inherit' });
   command('npm', ['run', 'build'], { stdio: 'inherit' });
 
-  const script = `set -e
-export CLOUDFLARE_API_TOKEN="$credential"
-export CLOUDFLARE_ACCOUNT_ID=${ACCOUNT}
-npx wrangler deploy --message ${sha} >&2
-npx wrangler deployments status --json`;
-  const output = command('yeo-key', ['--env', 'Hetzner Wrangler All Access', '--', 'bash', '-c', script]);
+  const deployEnv = { ...env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT };
+  command('npx', ['wrangler', 'deploy', '--message', sha], { stdio: ['ignore', 'inherit', 'inherit'], env: deployEnv });
+  const output = command('npx', ['wrangler', 'deployments', 'status', '--json'], { env: deployEnv });
   let status;
   try {
     status = JSON.parse(output);

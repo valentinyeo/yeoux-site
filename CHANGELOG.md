@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Deploys run on GitHub-hosted runners: the Deploy workflow runs `npm run ship` on every push to main; locally `npm run ship` refuses.
+
 ## 0.1.3
 
 - AI Movers day board shows twenty candidates with source labels, hook headlines, and drag order.

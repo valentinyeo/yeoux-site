@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { spawnSync } from 'node:child_process';
-import { ACCOUNT, main } from '../tools/ship.mjs';
+import { ACCOUNT, WORKFLOW, main } from '../tools/ship.mjs';
 
 const sha = 'a'.repeat(40);
 const version = '12345678-1234-1234-1234-123456789abc';
+const ciEnv = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', CLOUDFLARE_API_TOKEN: 'test-token' };
 
-function fixture({ dirty = '', remote = sha, head = sha, help = '--message', status = { annotations: { 'workers/message': sha }, versions: [{ version_id: version, percentage: 100 }] }, liveStatus = 302, location = 'https://yeoux.cloudflareaccess.com/login', fetchError = null, failAt = -1 } = {}) {
+function fixture({ dirty = '', remote = sha, head = sha, help = '--message', status = { annotations: { 'workers/message': sha }, versions: [{ version_id: version, percentage: 100 }] }, liveStatus = 302, location = 'https://yeoux.cloudflareaccess.com/login', fetchError = null, failAt = -1, env = ciEnv } = {}) {
   const calls = [];
   const requests = [];
   const run = (command, args, options) => {
@@ -15,8 +17,8 @@ function fixture({ dirty = '', remote = sha, head = sha, help = '--message', sta
     if (calls.length - 1 === failAt) throw new Error('private child output must not be echoed');
     if (command === 'git' && args[0] === 'status') return dirty;
     if (command === 'git' && args[0] === 'rev-parse') return `${args[1] === 'HEAD' ? head : remote}\n`;
-    if (command === 'npx') return help;
-    if (command === 'yeo-key') return typeof status === 'string' ? status : JSON.stringify(status);
+    if (command === 'npx' && args[1] === 'deployments') return typeof status === 'string' ? status : JSON.stringify(status);
+    if (command === 'npx' && args.includes('--help')) return help;
     return '';
   };
   const fetchImpl = async (url, options) => {
@@ -24,7 +26,7 @@ function fixture({ dirty = '', remote = sha, head = sha, help = '--message', sta
     if (fetchError) throw fetchError;
     return new Response(null, { status: liveStatus, headers: location ? { Location: location } : {} });
   };
-  return { calls, requests, ship: () => main(run, fetchImpl) };
+  return { calls, requests, ship: () => main(run, fetchImpl, env) };
 }
 
 test('package scripts expose ship without a raw deploy bypass', () => {
@@ -43,7 +45,33 @@ test('package scripts expose ship without a raw deploy bypass', () => {
   check(scripts);
 });
 
-test('dirty trees and HEAD other than origin/main refuse before npm or yeo-key', async () => {
+test('outside a GitHub-hosted runner, or without the token, ship refuses before any command', async () => {
+  for (const [env, message] of [
+    [{}, /GitHub-hosted runners, never on this VPS/],
+    [{ CLOUDFLARE_API_TOKEN: 'x' }, /GitHub-hosted runners/],
+    [{ GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted', CLOUDFLARE_API_TOKEN: 'x' }, /GitHub-hosted runners/],
+    [{ GITHUB_ACTIONS: 'false', RUNNER_ENVIRONMENT: 'github-hosted', CLOUDFLARE_API_TOKEN: 'x' }, /GitHub-hosted runners/],
+    [{ GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted' }, /CLOUDFLARE_API_TOKEN/],
+  ]) {
+    const f = fixture({ env });
+    await assert.rejects(f.ship(), message);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.requests.length, 0);
+  }
+  assert.ok(existsSync(new URL(`../${WORKFLOW}`, import.meta.url)), 'refusal must point at a real workflow');
+});
+
+test('the deploy workflow runs ship on a GitHub-hosted runner for every push to main', () => {
+  const workflow = parse(readFileSync(new URL(`../${WORKFLOW}`, import.meta.url), 'utf8'));
+  assert.deepEqual(workflow.on.push.branches, ['main']);
+  const steps = workflow.jobs.deploy.steps;
+  assert.equal(workflow.jobs.deploy['runs-on'], 'ubuntu-latest');
+  const ship = steps.find(step => step.run === 'npm run ship');
+  assert.ok(ship, 'deploy job must run npm run ship');
+  assert.equal(ship.env.CLOUDFLARE_API_TOKEN, '${{ secrets.CLOUDFLARE_API_TOKEN }}');
+});
+
+test('dirty trees and HEAD other than origin/main refuse before npm or deploy', async () => {
   for (const [options, message] of [[{ dirty: ' M README.md\n' }, /working tree must be clean/], [{ dirty: '?? untracked.txt\n' }, /working tree must be clean/], [{ remote: 'b'.repeat(40) }, /HEAD must equal origin\/main/]]) {
     const f = fixture(options);
     await assert.rejects(f.ship(), message);
@@ -58,7 +86,7 @@ test('happy path checks in order, deploys once with the sha, and verifies Zero T
   t.mock.method(console, 'log', text => printed.push(text));
   const f = fixture();
   await f.ship();
-  assert.deepEqual(f.calls.map(({ command, args }) => [command, ...args.slice(0, command === 'yeo-key' ? 1 : undefined)]), [
+  assert.deepEqual(f.calls.map(({ command, args }) => [command, ...args]), [
     ['git', 'fetch', 'origin'],
     ['git', 'status', '--porcelain'],
     ['git', 'rev-parse', 'HEAD'],
@@ -67,23 +95,22 @@ test('happy path checks in order, deploys once with the sha, and verifies Zero T
     ['npx', 'wrangler', 'deploy', '--help'],
     ['npm', 'run', 'check'],
     ['npm', 'run', 'build'],
-    ['yeo-key', '--env'],
+    ['npx', 'wrangler', 'deploy', '--message', sha],
+    ['npx', 'wrangler', 'deployments', 'status', '--json'],
   ]);
   for (const call of f.calls.filter(call => call.command === 'npm')) assert.equal(call.options.stdio, 'inherit');
-  const keys = f.calls.filter(call => call.command === 'yeo-key');
-  assert.equal(keys.length, 1);
-  assert.deepEqual(keys[0].args, ['--env', 'Hetzner Wrangler All Access', '--', 'bash', '-c', `set -e
-export CLOUDFLARE_API_TOKEN="$credential"
-export CLOUDFLARE_ACCOUNT_ID=${ACCOUNT}
-npx wrangler deploy --message ${sha} >&2
-npx wrangler deployments status --json`]);
-  assert.deepEqual(keys[0].options.stdio, ['ignore', 'pipe', 'inherit']);
+  for (const call of f.calls.slice(-2)) {
+    assert.equal(call.options.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT);
+    assert.equal(call.options.env.CLOUDFLARE_API_TOKEN, 'test-token');
+  }
+  assert.ok(f.calls.slice(0, -2).every(call => !call.options.env), 'only the deploy calls get the Cloudflare env');
+  assert.ok(f.calls.every(call => call.command !== 'yeo-key'), 'CI reads the token from the repo secret, never yeo-key');
   assert.deepEqual(f.requests, [{ url: 'https://yeoux.net/', options: { redirect: 'manual' } }]);
   assert.deepEqual(printed, [`shipped ${sha} version ${version}`]);
 });
 
 test('each command failure stops immediately without echoing captured output', async () => {
-  for (let failAt = 0; failAt < 9; failAt++) {
+  for (let failAt = 0; failAt < 10; failAt++) {
     const f = fixture({ failAt });
     await assert.rejects(f.ship(), error => {
       assert.match(error.message, /failed$/);
@@ -95,11 +122,11 @@ test('each command failure stops immediately without echoing captured output', a
   }
 });
 
-test('an unsupported message flag or invalid sha fails before credential access', async () => {
+test('an unsupported message flag or invalid sha fails before deploying', async () => {
   for (const [options, message] of [[{ help: 'no message option' }, /must support deploy --message/], [{ head: 'not-a-sha', remote: 'not-a-sha' }, /invalid HEAD sha/]]) {
     const f = fixture(options);
     await assert.rejects(f.ship(), message);
-    assert.ok(f.calls.every(call => call.command !== 'yeo-key'));
+    assert.ok(f.calls.every(call => !call.args.includes('--message')));
     assert.equal(f.requests.length, 0);
   }
 });
@@ -146,7 +173,8 @@ test('the ship account equals account_id in wrangler.toml', () => {
 
 test('direct execution exits nonzero on the first failure, while importing does not run main', () => {
   const file = new URL('../tools/ship.mjs', import.meta.url);
-  for (const direct of [false, true]) {
+  const ci = { PATH: process.env.PATH, ...ciEnv };
+  for (const [direct, env, expected] of [[false, ci, ''], [true, ci, 'ship: git fetch origin failed\n'], [true, { PATH: process.env.PATH }, /^ship: deploys run only on GitHub-hosted runners/]]) {
     const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
@@ -154,9 +182,10 @@ childProcess.execFileSync = () => { throw new Error('private child output'); };
 syncBuiltinESMExports();
 process.argv[1] = ${JSON.stringify(direct ? file.pathname : '')};
 await import(${JSON.stringify(file.href)});
-`], { encoding: 'utf8' });
+`], { encoding: 'utf8', env });
     assert.equal(result.status, direct ? 1 : 0);
     assert.equal(result.stdout, '');
-    assert.equal(result.stderr, direct ? 'ship: git fetch origin failed\n' : '');
+    if (typeof expected === 'string') assert.equal(result.stderr, expected);
+    else assert.match(result.stderr, expected);
   }
 });
