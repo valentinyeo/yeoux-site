@@ -28,3 +28,8 @@ test('menu lists core reports at the top level, runners first, with no split', (
   assert.match(html, /<a href="\/reports\/a41914ac-runner-board.html" aria-current="page">Runners</);
   assert.doesNotMatch(html, /<a href="\/reports" aria-current/);
 });
+
+test('fleet plan is a core report in the Software Factory menu', () => {
+  const entry = CORE[0].items.find(item => item.name === 'Fleet plan');
+  assert.equal(entry.href, '/reports/38361bb7-fleet-shape.html');
+});
