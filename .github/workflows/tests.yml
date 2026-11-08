@@ -15,7 +15,7 @@ permissions:
 jobs:
   test:
     name: tests
-    runs-on: [self-hosted, contabo, yeoux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
