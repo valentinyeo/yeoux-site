@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { deleteItem, getItem, indexItems, isValidSlug, legacyRedirect, legacySection, legacySlug, listAll, putItem, titleFromSlug, uploadMetadata } from '../src/lib/content.mjs';
@@ -139,4 +140,12 @@ test('DELETE removes only the authenticated target from storage and its live sec
     assert.equal(missing.status, 404);
     assert.deepEqual(await missing.json(), { error: 'Not found' });
   }
+});
+
+test('theme script moves a page nav slot into the header bar', () => {
+  const js = readFileSync(new URL('../public/theme/v1/theme.js', import.meta.url), 'utf8');
+  assert.match(js, /body > \[data-nav-slot\]/);
+  assert.match(js, /nav\.appendChild\(slot\)/);
+  const css = readFileSync(new URL('../public/theme/v1/theme.css', import.meta.url), 'utf8');
+  assert.match(css, /\.ht-nav \[data-nav-slot\]/);
 });
