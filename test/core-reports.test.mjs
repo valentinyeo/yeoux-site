@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CORE, resolveCore } from '../src/lib/coreReports.mjs';
 import { siteNavigation } from '../src/lib/siteNavigation.mjs';
 
@@ -9,8 +10,8 @@ const items = [
 ];
 
 test('core reports keep the agreed order and names, runners first', () => {
-  const names = CORE[0].items.slice(0, 4).map(entry => entry.name);
-  assert.deepEqual(names, ['Runners', 'Usage', 'Factory performance', 'CI performance']);
+  const names = CORE[0].items.slice(0, 5).map(entry => entry.name);
+  assert.deepEqual(names, ['Runners', 'Control room', 'Usage', 'Factory performance', 'CI performance']);
 });
 
 test('a dated report resolves to its newest page and an unpublished one is left out', () => {
@@ -18,7 +19,7 @@ test('a dated report resolves to its newest page and an unpublished one is left 
   assert.equal(all.find(entry => entry.name === 'Finance triage').href, '/reports/aaaa1111-finance-triage-2026-11-07.html');
   assert.ok(!all.some(entry => entry.name === 'CI performance'));
   const published = resolveCore([...items, { slug: 'cccc3333-ci.html', title: 'CI performance' }]);
-  assert.equal(published[0].items[3].name, 'CI performance');
+  assert.equal(published[0].items[4].name, 'CI performance');
 });
 
 test('menu lists core reports at the top level, runners first, with no split', () => {
@@ -44,6 +45,20 @@ test('fleet plan is a core report in the Software Factory menu', () => {
 test('heavy tickets is a core report in the Software Factory menu', () => {
   const entry = CORE[0].items.find(item => item.name === 'Heavy tickets');
   assert.equal(entry.href, '/reports/17c95ef7-heavy.html');
+});
+
+test('control room is the second entry in the open menu', () => {
+  const html = siteNavigation('/reports/c65b9a8c-productivity.html', resolveCore([]));
+  const names = [...html.matchAll(/<li><a href="[^"]+"[^>]*>([^<]+)</g)].map(match => match[1]);
+  assert.equal(names[1], 'Control room');
+  assert.equal(CORE[0].items.find(item => item.name === 'Control room').href, '/reports/7c6e2ee0-control-room.html');
+});
+
+test('menu title is small and plain', () => {
+  const css = readFileSync(new URL('../public/theme/v1/theme.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.ht-nav \.ht-brand \{([^}]*)\}/)[1];
+  assert.match(rule, /font-size: \.8125rem/);
+  assert.match(rule, /font-weight: 500/);
 });
 
 test('color mode toggle lives in the hamburger menu, not the header row', () => {

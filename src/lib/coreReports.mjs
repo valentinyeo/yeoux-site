@@ -3,6 +3,7 @@ import { SECTIONS, indexItems, listAll } from './content.mjs';
 export const CORE = [
   { title: 'Software Factory', items: [
     { name: 'Runners', line: 'Who is building what right now, and who is idle.', href: '/reports/a41914ac-runner-board.html' },
+    { name: 'Control room', line: 'Every timer and job, and which ones are broken.', href: '/reports/7c6e2ee0-control-room.html' },
     { name: 'Usage', line: 'How much of each Claude and Codex plan is used, against time.', href: '/reports/4180dee3-subscription-pacing.html' },
     { name: 'Factory performance', line: 'Pull requests shipped and tickets handled, hour by hour.', href: '/reports/c65b9a8c-productivity.html' },
     { name: 'CI performance', line: 'How long checks take and how often they fail.', match: '^CI performance' },
