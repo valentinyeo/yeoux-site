@@ -78,7 +78,8 @@ test('old admin URLs redirect to wherever the item moved', async () => {
 test('hosted HTML pages get the Yeo UX top bar', () => {
   const html = themeArtifactHtml('<!doctype html><html><head><meta charset="utf-8"></head><body><p>x</p></body></html>', '/reports');
   assert.match(html, /data-site-nav/);
-  assert.match(html, />Yeo UX</);
+  assert.match(html, /<a class="ht-brand" href="\/reports\/c65b9a8c-productivity.html">Factory performance</);
+  assert.doesNotMatch(html, />Yeo UX</);
   assert.match(html, /href="\/reports" aria-current="page"/);
 });
 
