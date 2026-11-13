@@ -28,6 +28,9 @@
   });
   window.addEventListener('beforeprint', () => { root.dataset.theme = 'light'; });
   window.addEventListener('afterprint', () => { apply(root.dataset.themePreference || 'system'); });
+  const slot = document.querySelector('body > [data-nav-slot]');
+  const nav = document.querySelector('[data-site-nav]');
+  if (slot && nav) nav.appendChild(slot);
   const menus = [...document.querySelectorAll('[data-site-nav] details')];
   menus.forEach(menu => menu.addEventListener('toggle', () => {
     if (menu.open) menus.forEach(other => {
