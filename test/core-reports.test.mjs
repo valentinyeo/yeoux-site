@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CORE, resolveCore } from '../src/lib/coreReports.mjs';
 import { siteNavigation } from '../src/lib/siteNavigation.mjs';
 
@@ -44,6 +45,13 @@ test('fleet plan is a core report in the Software Factory menu', () => {
 test('heavy tickets is a core report in the Software Factory menu', () => {
   const entry = CORE[0].items.find(item => item.name === 'Heavy tickets');
   assert.equal(entry.href, '/reports/17c95ef7-heavy.html');
+});
+
+test('menu title is small and plain', () => {
+  const css = readFileSync(new URL('../public/theme/v1/theme.css', import.meta.url), 'utf8');
+  const rule = css.match(/\.ht-nav \.ht-brand \{([^}]*)\}/)[1];
+  assert.match(rule, /font-size: \.8125rem/);
+  assert.match(rule, /font-weight: 500/);
 });
 
 test('color mode toggle lives in the hamburger menu, not the header row', () => {
