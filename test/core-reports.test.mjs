@@ -41,6 +41,11 @@ test('fleet plan is a core report in the Software Factory menu', () => {
   assert.equal(entry.href, '/reports/38361bb7-fleet-shape.html');
 });
 
+test('heavy tickets is a core report in the Software Factory menu', () => {
+  const entry = CORE[0].items.find(item => item.name === 'Heavy tickets');
+  assert.equal(entry.href, '/reports/17c95ef7-heavy.html');
+});
+
 test('color mode toggle lives in the hamburger menu, not the header row', () => {
   const html = siteNavigation('/reports/c65b9a8c-productivity.html', resolveCore([]));
   const menu = html.slice(html.indexOf('<ul class="ht-mobile-items">'), html.indexOf('</ul>'));
