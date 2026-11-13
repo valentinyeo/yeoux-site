@@ -29,6 +29,13 @@ test('menu lists core reports at the top level, runners first, with no split', (
   assert.doesNotMatch(html, /<a href="\/reports" aria-current/);
 });
 
+test('factory performance is the header link, not a menu item', () => {
+  const html = siteNavigation('/reports/c65b9a8c-productivity.html', resolveCore([]));
+  assert.match(html, /<a class="ht-brand" href="\/reports\/c65b9a8c-productivity.html" aria-current="page">Factory performance<\/a>/);
+  assert.equal(html.match(/productivity\.html/g).length, 1);
+  assert.doesNotMatch(html, />Yeo UX</);
+});
+
 test('fleet plan is a core report in the Software Factory menu', () => {
   const entry = CORE[0].items.find(item => item.name === 'Fleet plan');
   assert.equal(entry.href, '/reports/38361bb7-fleet-shape.html');
