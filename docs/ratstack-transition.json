@@ -1,0 +1,95 @@
+{
+  "ticket": "HYCI-361",
+  "ratStack": "10152920820e717f889628d4c4793fd38967dbd5",
+  "incumbent": "6b1fc4191c42af7e6b5f177fee81e5ce7adee691",
+  "plausible": "a39465fe3dcc59b1de5702b417e926d0b2473016",
+  "status": "plan-only",
+  "slices": [
+    { "id": "S01", "ticket": "HYCI-363", "skill": "keep-or-cut", "dependsOn": [] },
+    { "id": "S02", "ticket": "HYCI-364", "skill": "rat-stack-mode", "dependsOn": ["S01"] },
+    { "id": "S03", "ticket": "HYCI-365", "skill": "learn-alchemy", "dependsOn": ["S02"] },
+    { "id": "S04", "ticket": "HYCI-366", "skill": "security-audit", "dependsOn": ["S03"] },
+    { "id": "S05", "ticket": "HYCI-367", "skill": "add-a-capability", "dependsOn": ["S04"] },
+    { "id": "S06", "ticket": "HYCI-368", "skill": "add-a-capability", "dependsOn": ["S05"] },
+    { "id": "S07", "ticket": "HYCI-369", "skill": "test-behaviour", "dependsOn": ["S06"] },
+    { "id": "S08", "ticket": "HYCI-370", "skill": "add-a-lifecycle-machine", "dependsOn": ["S07"] },
+    { "id": "S09", "ticket": "HYCI-371", "skill": "ship", "dependsOn": ["S08"] },
+    { "id": "S10", "ticket": "HYCI-372", "skill": "test-behaviour", "dependsOn": ["S09"] },
+    { "id": "S11", "ticket": "HYCI-373", "skill": "ship", "dependsOn": ["S10"] },
+    { "id": "S12", "ticket": "HYCI-374", "skill": "keep-or-cut", "dependsOn": ["S11"] }
+  ],
+  "inventory": [
+    {
+      "id": "I01", "slice": "S01", "noun": "Workspace",
+      "files": [".gitignore", "package.json", "package-lock.json", "astro.config.mjs"]
+    },
+    {
+      "id": "I02", "slice": "S02", "noun": "Project law",
+      "files": ["CLAUDE.md", "README.md", "CHANGELOG.md", "GATES.md"]
+    },
+    {
+      "id": "I03", "slice": "S03", "noun": "Site resources",
+      "files": ["wrangler.toml", "public/.assetsignore"]
+    },
+    {
+      "id": "I04", "slice": "S03", "noun": "Watcher resources",
+      "files": ["workers/fleet-supervisor-watch/wrangler.toml"]
+    },
+    {
+      "id": "I05", "slice": "S05", "noun": "Content capability",
+      "files": ["src/lib/content.mjs", "test/content.test.mjs"]
+    },
+    {
+      "id": "I06", "slice": "S05", "noun": "Artifact renderer",
+      "files": ["src/lib/artifactTheme.mjs"]
+    },
+    {
+      "id": "I07", "slice": "S06", "noun": "Dashboard capabilities",
+      "files": ["src/lib/dash.mjs", "test/dash.test.mjs"]
+    },
+    {
+      "id": "I08", "slice": "S05", "noun": "Core report index",
+      "files": ["src/lib/coreReports.mjs", "test/core-reports.test.mjs"]
+    },
+    {
+      "id": "I09", "slice": "S05", "noun": "Content HTTP projection",
+      "files": ["src/lib/sectionRoutes.mjs", "src/pages/explorations/[slug].ts", "src/pages/reports/[slug].ts"]
+    },
+    {
+      "id": "I10", "slice": "S07", "noun": "Index Features",
+      "files": ["src/pages/index.astro", "src/pages/explorations/index.astro", "src/pages/reports/index.astro", "src/components/ItemTable.astro"]
+    },
+    {
+      "id": "I11", "slice": "S07", "noun": "Theme and navigation Client",
+      "files": ["src/layouts/Base.astro", "src/lib/siteNavigation.mjs", "src/styles/global.css", "tokens.css", "public/theme/v1/init.js", "public/theme/v1/theme.js", "public/theme/v1/theme.css", "public/theme/v1/tokens.css", "public/theme/v1/legacy.css", "public/theme/v1/navigation.mjs", "public/theme/v1/manrope-variable.woff2", "public/theme/v1/Manrope-OFL.txt"]
+    },
+    {
+      "id": "I12", "slice": "S07", "noun": "Dashboard Feature",
+      "files": ["src/pages/dash/index.astro", "src/pages/dash/ai-movers/index.astro", "src/pages/dash/ai-movers/[date].astro"]
+    },
+    {
+      "id": "I13", "slice": "S06", "noun": "Dashboard HTTP projection",
+      "files": ["src/pages/dash/ai-movers/[date]/catalog.ts", "src/pages/dash/ai-movers/[date]/decisions.ts", "src/pages/dash/ai-movers/[date]/order.ts"]
+    },
+    {
+      "id": "I14", "slice": "S04", "noun": "Access cartridge and routing",
+      "files": ["src/middleware.js"]
+    },
+    {
+      "id": "I15", "slice": "S08", "noun": "Supervisor lifecycle",
+      "files": ["workers/fleet-supervisor-watch/src/index.ts", "workers/fleet-supervisor-watch/package.json", "workers/fleet-supervisor-watch/package-lock.json", "workers/fleet-supervisor-watch/tsconfig.json", "workers/fleet-supervisor-watch/README.md"]
+    },
+    {
+      "id": "I16", "slice": "S09", "noun": "Operator capabilities and release",
+      "files": ["bin/yeoshare.mjs", "tools/gates.mjs", "tools/migrate.mjs", "tools/ship.mjs", "tools/no-hypertask.mjs", "tools/strip-comments.mjs", "tools/strip-comments.test.cjs", "test/gates.test.mjs", "test/ship.test.mjs", "test/tools.test.mjs", "test/yeoshare.test.mjs"]
+    },
+    {
+      "id": "I17", "slice": "S09", "noun": "GitHub verification fence",
+      "files": [".github/workflows/deploy.yml", ".github/workflows/tests.yml", ".github/workflows/gitleaks.yml", ".github/workflows/no-comments.yml", "test/workflows.test.mjs", "test/claude-md.test.mjs"]
+    },
+    {
+      "id": "I18", "slice": "S12", "noun": "Temporary transition coverage",
+      "files": ["docs/ratstack-transition.md", "docs/ratstack-transition.json", "tools/transition-coverage.mjs", "test/transition-coverage.test.mjs"]
+    }
+  ]
+}

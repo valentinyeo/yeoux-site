@@ -2,6 +2,10 @@
 
 The yeoux.net hub: explorations and reports for Yeo UX projects, behind Zero Trust.
 
+## Rat Stack transition
+
+[HYCI-361 transition plan](docs/ratstack-transition.md) pins the target stack, maps the existing behaviours and orders the rewrite. The site still runs on Astro. The plan's source-coverage tests run in GitHub Actions; they do not prove the rewrite is live.
+
 ## Publish and delete
 
 ```bash
