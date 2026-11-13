@@ -7,6 +7,7 @@ export const CORE = [
     { name: 'Factory performance', line: 'Pull requests shipped and tickets handled, hour by hour.', href: '/reports/c65b9a8c-productivity.html' },
     { name: 'CI performance', line: 'How long checks take and how often they fail.', match: '^CI performance' },
     { name: 'Check wait', line: 'How long pull requests wait for their checks.', href: '/reports/eb9c1c8d-factory-check-wait.html' },
+    { name: 'Heavy tickets', line: 'Tickets that took many runner runs, by cause and time window.', href: '/reports/17c95ef7-heavy.html' },
     { name: 'Changes shipped', line: 'What went live, newest first.', href: '/reports/1f3069d2-shipping.html' },
     { name: 'Fleet plan', line: 'The active factory design and who is in it.', href: '/reports/38361bb7-fleet-shape.html' },
   ] },
