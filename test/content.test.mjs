@@ -84,7 +84,7 @@ test('hosted HTML pages get the Yeo UX top bar', () => {
   assert.match(html, /href="\/reports" aria-current="page"/);
 });
 
-test('large HTML streams through the native rewriter without buffering a DOM', async () => {
+async function streamedPage(active = '/reports') {
   const response = new Response('<html><head></head><body>large</body></html>', { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': String(12 * 1024 * 1024) } });
   response.arrayBuffer = () => { throw new Error('large HTML must not be buffered'); };
   const handlers = new Map();
@@ -94,25 +94,63 @@ test('large HTML streams through the native rewriter without buffering a DOM', a
     transform(input) { assert.equal(input, response); return input; }
   };
   try {
-    assert.equal(await withArtifactTheme(response, '/reports'), response);
-    const attrs = new Map();
-    handlers.get('html').element({ hasAttribute: name => attrs.has(name), setAttribute: (name, value) => attrs.set(name, value) });
-    assert.ok(attrs.has('data-ht-artifact'));
-    let head;
-    handlers.get('head').element({ onEndTag: callback => callback({ before: html => { head = html; } }) });
-    assert.match(head, /theme\/v1\/theme.css/);
-    assert.match(head, /name="viewport"/);
-    let body;
-    handlers.get('body').element({ prepend: html => { body = html; } });
-    assert.match(body, /data-site-nav/);
-    assert.match(body, /href="\/reports" aria-current="page"/);
-    let removed = false;
-    handlers.get('header.ht-site-nav').element({ remove() { removed = true; } });
-    assert.ok(removed);
+    assert.equal(await withArtifactTheme(response, active), response);
   } finally {
     if (previous === undefined) delete globalThis.HTMLRewriter;
     else globalThis.HTMLRewriter = previous;
   }
+  return handlers;
+}
+
+test('large HTML streams through the native rewriter without buffering a DOM', async () => {
+  const handlers = await streamedPage();
+  const attrs = new Map();
+  handlers.get('html').element({ hasAttribute: name => attrs.has(name), setAttribute: (name, value) => attrs.set(name, value) });
+  assert.ok(attrs.has('data-ht-artifact'));
+  let head;
+  handlers.get('head').element({ onEndTag: callback => callback({ before: html => { head = html; } }) });
+  assert.match(head, /theme\/v1\/theme.css/);
+  assert.match(head, /name="viewport"/);
+  let body;
+  handlers.get('body').element({ prepend: html => { body = html; } });
+  assert.match(body, /data-site-nav/);
+  assert.match(body, /href="\/reports" aria-current="page"/);
+  let removed = false;
+  handlers.get('header.ht-site-nav').element({ remove() { removed = true; } });
+  assert.ok(removed);
+});
+
+test('a large report that declares its own theme still gets the site top menu', async () => {
+  const handlers = await streamedPage('/reports/1f3069d2-shipping.html');
+  const attrs = new Map([['data-ht-artifact', '']]);
+  handlers.get('html').element({ hasAttribute: name => attrs.has(name), setAttribute: (name, value) => attrs.set(name, value) });
+  let head;
+  handlers.get('head').element({ onEndTag: callback => callback({ before: html => { head = html; } }) });
+  assert.match(head, /theme\/v1\/theme.css/);
+  let body;
+  handlers.get('body').element({ prepend: html => { body = html; } });
+  assert.match(body, /data-site-menu/);
+  assert.match(body, /href="\/reports\/1f3069d2-shipping.html" aria-current="page"/);
+  let removed = false;
+  handlers.get('[data-site-nav]').element({ hasAttribute: () => false, remove() { removed = true; } });
+  assert.ok(removed);
+  let kept = true;
+  handlers.get('[data-site-nav]').element({ hasAttribute: name => name === 'data-site-menu', remove() { kept = false; } });
+  assert.ok(kept);
+});
+
+test('a page that already carries the site menu is left alone', () => {
+  const themed = themeArtifactHtml('<!doctype html><html><head><meta charset="utf-8"></head><body><p>x</p></body></html>', '/reports');
+  assert.equal(themeArtifactHtml(themed, '/reports'), themed);
+});
+
+test('a report page that brings its own back link gets the site menu instead', () => {
+  const source = '<!doctype html><html lang="en" data-ht-artifact><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><nav data-site-nav aria-label="Report navigation"><a href="/reports">← Reports</a></nav><main><p>changes shipped</p></main></body></html>';
+  const html = themeArtifactHtml(source, '/reports/1f3069d2-shipping.html');
+  assert.match(html, /data-site-menu/);
+  assert.match(html, /href="\/reports\/1f3069d2-shipping.html" aria-current="page"/);
+  assert.doesNotMatch(html, /Report navigation/);
+  assert.match(html, /<main><p>changes shipped<\/p><\/main>/);
 });
 
 test('DELETE removes only the authenticated target from storage and its live section index', async () => {

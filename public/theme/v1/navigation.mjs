@@ -10,7 +10,7 @@ export function renderNavigation({ brand = 'Yeo UX', home = '/', sections = [], 
   const current = href => exact ? href === active : href !== '/' && active.startsWith(href + '/');
   const link = ([href, label]) => `<li><a href="${safeHref(href)}"${current(href) ? ' aria-current="page"' : ''}>${escape(label)}</a></li>`;
   const items = sections.map(([heading, links]) => (heading ? `<li class="ht-heading">${escape(heading)}</li>` : '') + links.map(link).join('')).join('') + `<li class="ht-heading">Display</li><li>${themeButton}</li>`;
-  return `<nav class="ht-nav" data-site-nav aria-label="Primary">
+  return `<nav class="ht-nav" data-site-nav data-site-menu aria-label="Primary">
     <details class="ht-mobile"><summary aria-label="Open navigation menu"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></summary><ul class="ht-mobile-items">${items}</ul></details>
     <a class="ht-brand" href="${safeHref(home)}"${active === home ? ' aria-current="page"' : ''}>${escape(brand)}</a>
   </nav>`;

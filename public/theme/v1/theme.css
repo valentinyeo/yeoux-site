@@ -6,7 +6,7 @@ h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; }
 ::selection { background: var(--color-primary); color: var(--color-primary-content); }
 :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 a { text-underline-offset: .2em; }
-.ht-shell { box-sizing: border-box; max-width: 80rem; margin-inline: auto; padding: 1.5rem 1rem 4rem; }
+.ht-shell { box-sizing: border-box; max-width: 64rem; margin-inline: auto; padding: 1.5rem 1rem 4rem; }
 .ht-nav, .ht-nav * { box-sizing: border-box; }
 .ht-nav { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem; position: relative; z-index: 50; min-height: 4rem; margin: 0 0 1.5rem; padding: .5rem; border: 1px solid var(--color-base-300); border-radius: .5rem; background: var(--color-base-100); color: var(--color-base-content); font: 500 .8125rem/1.5 var(--font-body); }
 .ht-nav a, .ht-nav summary, .ht-theme-toggle { display: flex; align-items: center; gap: .375rem; min-height: 2.75rem; padding: .5rem .625rem; border: 0; border-radius: .375rem; color: inherit; background: transparent; text-decoration: none; cursor: pointer; font: inherit; white-space: nowrap; }
