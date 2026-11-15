@@ -1,0 +1,234 @@
+name: pstack verifier
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: pstack-verifier-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  pstack-verifier:
+    name: pstack-verifier
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the base commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: parent
+          fetch-depth: 0
+
+      - name: Check out the head commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+
+      - name: Read the pull request as untrusted data
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$PR_TITLE" > pr-title.txt
+          printf '%s' "$PR_BODY" > pr-body.txt
+          printf '%s' "$PR_NUMBER" > pr-number.txt
+
+      - name: List the changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          : > changed-files.txt
+          : > diff.txt
+          if git -C parent fetch --no-tags origin "+$HEAD_SHA:refs/pstack/head" \
+            || git -C parent fetch --no-tags origin "+refs/pull/$PR_NUMBER/head:refs/pstack/head"; then
+            if [ "$(git -C parent rev-parse refs/pstack/head)" = "$HEAD_SHA" ]; then
+              git -C parent diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+              git -C parent diff "$BASE_SHA" "$HEAD_SHA" > diff.txt
+            fi
+          fi
+          wc -l < changed-files.txt
+
+      - name: Pick the verifier scripts and feature map
+        run: |
+          if [ -f parent/verifier/verify.mjs ] && [ -f parent/docs/feature-map.md ]; then
+            echo "VERIFIER_DIR=$PWD/parent/verifier" >> "$GITHUB_ENV"
+            echo "FEATURE_MAP=$PWD/parent/docs/feature-map.md" >> "$GITHUB_ENV"
+            echo "PSTACK_BOOTSTRAP=no, this run uses the base commit's verifier scripts" > bootstrap-note.txt
+          else
+            echo "VERIFIER_DIR=$PWD/head/verifier" >> "$GITHUB_ENV"
+            echo "FEATURE_MAP=$PWD/head/docs/feature-map.md" >> "$GITHUB_ENV"
+            echo "PSTACK_BOOTSTRAP=yes, the base commit has no verifier scripts, so this run uses the head commit's own verifier scripts" > bootstrap-note.txt
+          fi
+          cat bootstrap-note.txt
+
+      - name: Give the app user its own copy of both checkouts
+        run: |
+          sudo useradd --create-home --shell /bin/bash pstackapp || true
+          APP_HOME=/srv/pstackapp
+          sudo rm -rf "$APP_HOME"
+          sudo mkdir -p "$APP_HOME"
+          sudo cp -a parent head "$APP_HOME/"
+          sudo chown -R pstackapp:pstackapp "$APP_HOME"
+          sudo chmod 755 "$APP_HOME"
+          sudo cp -a "$VERIFIER_DIR" "$APP_HOME/verifier"
+          sudo chown -R pstackapp:pstackapp "$APP_HOME/verifier"
+          echo "APP_HOME=$APP_HOME" >> "$GITHUB_ENV"
+          echo "PARENT_DIR=$APP_HOME/parent" >> "$GITHUB_ENV"
+          echo "HEAD_DIR=$APP_HOME/head" >> "$GITHUB_ENV"
+          echo "APP_VERIFIER_DIR=$APP_HOME/verifier" >> "$GITHUB_ENV"
+          for file in "$APP_HOME/parent/package-lock.json" "$APP_HOME/head/package-lock.json" "$APP_HOME/verifier/start-app.sh"; do
+            if ! sudo -u pstackapp test -r "$file"; then
+              echo "the app user cannot read $file, so its app could not start" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install, build and start both apps without any model login
+        run: |
+          app_run() {
+            sudo -u pstackapp env -i HOME=/home/pstackapp PATH="$PATH" CI=1 "$@"
+          }
+          echo "HEAD_APP=down" >> "$GITHUB_ENV"
+          echo "PARENT_APP=down" >> "$GITHUB_ENV"
+          : > app-note.txt
+          if ! app_run npm --prefix "$PARENT_DIR" ci --no-audit --no-fund > parent-install.log 2>&1; then echo "the base copy did not install" >> app-note.txt; fi
+          if ! app_run npm --prefix "$HEAD_DIR" ci --no-audit --no-fund > head-install.log 2>&1; then echo "the head copy did not install" >> app-note.txt; fi
+          if app_run npm --prefix "$PARENT_DIR" run build > parent-build.log 2>&1; then echo "base build ok"; else echo "the base copy did not build" >> app-note.txt; fi
+          if app_run npm --prefix "$HEAD_DIR" run build > head-build.log 2>&1; then echo "head build ok"; else
+            echo "the head copy did not build" >> app-note.txt
+            echo "HEAD_APP=down" >> "$GITHUB_ENV"
+          fi
+          if [ -d "$PARENT_DIR/node_modules" ]; then rm -rf parent/node_modules; ln -sfn "$PARENT_DIR/node_modules" parent/node_modules; fi
+          if [ -d "$HEAD_DIR/node_modules" ]; then rm -rf head/node_modules; ln -sfn "$HEAD_DIR/node_modules" head/node_modules; fi
+          parent_url=$(app_run bash "$APP_VERIFIER_DIR/start-app.sh" "$PARENT_DIR" 4501 2> parent-app.log | tail -1 || true)
+          head_url=$(app_run bash "$APP_VERIFIER_DIR/start-app.sh" "$HEAD_DIR" 4502 2> head-app.log | tail -1 || true)
+          if [ -n "$parent_url" ]; then
+            echo "PARENT_APP=up" >> "$GITHUB_ENV"
+            echo "PARENT_URL=$parent_url" >> "$GITHUB_ENV"
+          else
+            echo "the base app did not start" >> app-note.txt
+          fi
+          if [ -n "$head_url" ]; then
+            echo "HEAD_APP=up" >> "$GITHUB_ENV"
+            echo "HEAD_URL=$head_url" >> "$GITHUB_ENV"
+          else
+            echo "the head app did not start" >> app-note.txt
+          fi
+          cat app-note.txt 2>/dev/null || true
+          if [ -s app-note.txt ]; then
+            for log in parent-install.log head-install.log parent-build.log head-build.log parent-app.log head-app.log; do
+              if [ -s "$log" ]; then
+                echo "--- $log, last 20 lines"
+                node "$VERIFIER_DIR/failure-log.mjs" "$log" 20 || tail -20 "$log" || true
+              fi
+            done
+          fi
+
+      - name: Install the browser the drive tool uses
+        run: |
+          : > browser-note.txt
+          if ! ( cd parent && npx playwright install --with-deps chromium ); then
+            echo "the browser did not install, so browser actions report not_drivable in this run" > browser-note.txt
+          fi
+
+      - name: Run the pstack verifier
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          PI_VERSION: '1.5.2'
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PSTACK_SCRATCH: ${{ github.workspace }}/scratch
+        run: |
+          mkdir -p scratch agent-bin
+          npm install -g "@earendil-works/pi-coding-agent@$PI_VERSION"
+          ln -sf "$(command -v node)" agent-bin/node
+          if command -v pi > /dev/null; then ln -sf "$(command -v pi)" agent-bin/pi; fi
+          echo "PSTACK_AGENT_PATH=$PWD/agent-bin" >> "$GITHUB_ENV"
+          node "$VERIFIER_DIR/verify.mjs" \
+            --pr "$PR_NUMBER" \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --parent-dir "$PWD/parent" \
+            --head-dir "$PWD/head" \
+            --parent-url "${PARENT_URL:-http://localhost:4501}" \
+            --head-url "${HEAD_URL:-http://localhost:4502}" \
+            --changed-files changed-files.txt \
+            --pr-title-file pr-title.txt \
+            --pr-body-file pr-body.txt \
+            --diff-file diff.txt \
+            --feature-map "$FEATURE_MAP" \
+            --drive-tool "$VERIFIER_DIR/drive.mjs" \
+            --scratch "$PWD/scratch" \
+            --parent-app "${PARENT_APP:-down}" \
+            --head-app "${HEAD_APP:-down}" \
+            --comment-out comment.md \
+            --summary-out summary.md
+
+      - name: Write the job summary
+        if: always()
+        run: |
+          {
+            cat bootstrap-note.txt 2>/dev/null || true
+            echo
+            cat app-note.txt 2>/dev/null || true
+            echo
+            cat browser-note.txt 2>/dev/null || true
+            echo
+            cat summary.md 2>/dev/null || echo "the verifier did not reach a verdict"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post one pull request comment
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ ! -s comment.md ]; then
+            printf 'pstack-verifier: FAIL @ %s\n\nReason: the verifier produced no comment file\n' "$HEAD_SHA" > comment.md
+          fi
+          if [ "${HEAD_APP:-down}" != "up" ] || [ "${PARENT_APP:-down}" != "up" ]; then
+            {
+              printf '\n### Why an app did not start\n\n'
+              for log in parent-install.log head-install.log parent-build.log head-build.log parent-app.log head-app.log; do
+                if [ -s "$log" ]; then
+                  printf 'Last 20 lines of `%s`:\n\n```\n' "$log"
+                  if [ -f "$VERIFIER_DIR/failure-log.mjs" ]; then
+                    node "$VERIFIER_DIR/failure-log.mjs" "$log" 20 || tail -20 "$log" || true
+                  else
+                    tail -20 "$log" || true
+                  fi
+                  printf '```\n\n'
+                fi
+              done
+            } >> comment.md
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file comment.md
+
+      - name: Stop both apps
+        if: always()
+        run: |
+          for dir in "${PARENT_DIR:-}" "${HEAD_DIR:-}"; do
+            if [ -n "$dir" ] && [ -f "$dir/.wrangler/pstack-app.pid" ]; then
+              sudo kill -- "-$(cat "$dir/.wrangler/pstack-app.pid")" 2>/dev/null || true
+            fi
+          done
