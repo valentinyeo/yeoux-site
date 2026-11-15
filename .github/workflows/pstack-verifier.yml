@@ -93,7 +93,7 @@ jobs:
           echo "PARENT_DIR=$APP_HOME/parent" >> "$GITHUB_ENV"
           echo "HEAD_DIR=$APP_HOME/head" >> "$GITHUB_ENV"
           echo "APP_VERIFIER_DIR=$APP_HOME/verifier" >> "$GITHUB_ENV"
-          for file in "$APP_HOME/parent/package-lock.json" "$APP_HOME/head/package-lock.json" "$APP_VERIFIER_DIR/start-app.sh"; do
+          for file in "$APP_HOME/parent/package-lock.json" "$APP_HOME/head/package-lock.json" "$APP_HOME/verifier/start-app.sh"; do
             if ! sudo -u pstackapp test -r "$file"; then
               echo "the app user cannot read $file, so its app could not start" >&2
               exit 1
