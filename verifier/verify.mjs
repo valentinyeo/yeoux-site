@@ -75,8 +75,7 @@ export function parseAuthorModel(prBody) {
 
 export function verifierFamilyFor(authorModel) {
   const declared = authorModel == null ? '' : String(authorModel).trim().toLowerCase();
-  if (!declared || declared === 'deepseek') return { family: 'claude' };
-  if (declared === 'claude' || declared === 'openai' || declared === 'grok') return { family: 'deepseek' };
+  if (!declared || AUTHOR_FAMILIES.includes(declared)) return { family: 'deepseek' };
   return {
     errorClass: 'unknown_author_model',
     detail: `author-model must be one of ${AUTHOR_FAMILIES.join(', ')}, received ${declared}`,
@@ -146,7 +145,7 @@ function cell(value) {
   return String(value ?? '').replace(/\r?\n/g, ' ').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
 }
 
-export function formatComment({ status, headSha, results = [], modelFamily, reason = '', note = '' }) {
+export function formatComment({ status, headSha, results = [], modelFamily, authorFamily = '', reason = '', note = '' }) {
   const lines = [firstLine(status, headSha), ''];
   if (reason) lines.push(`Reason: ${cell(reason)}`, '');
   lines.push('| Feature | Parent | Head | Verdict | Severity | Evidence |');
@@ -157,6 +156,7 @@ export function formatComment({ status, headSha, results = [], modelFamily, reas
   if (!results.length) lines.push('| (no feature driven) | | | | | |');
   lines.push('');
   lines.push(`Verifier model family: ${cell(modelFamily)}`);
+  if (authorFamily && authorFamily === modelFamily) lines.push('', `Same family: the author and the verifier are both ${cell(modelFamily)} (owner's decision, 2026-11-15).`);
   if (note) lines.push('', cell(note));
   return `${lines.join('\n')}\n`;
 }
@@ -169,7 +169,7 @@ export function buildPrompt({ prNumber, baseSha, headSha, parentUrl, headUrl, ro
     `Correct result: ${row.result}`,
   ].join('\n')).join('\n\n');
   return [
-    'You are a pull request verifier from a different model family than the author. You judge this pull request by running the app like a user, never by reading the diff.',
+    'You are a pull request verifier. You judge this pull request by running the app like a user, never by reading the diff.',
     '',
     'Two copies of this app are already running locally with the same invented seed data. The parent copy is the pull request base commit, the head copy is the head commit.',
     `Parent app: ${parentUrl} (checkout ${parentDir})`,
@@ -347,7 +347,7 @@ export async function runVerification(inputs, deps = {}) {
   const headAppUp = inputs.headAppUp !== false;
   const author = parseAuthorModel(inputs.prBody);
   const verifier = verifierFamilyFor(author.declared);
-  const base = { modelFamily: verifier.family || 'claude', selected, results: [] };
+  const base = { modelFamily: verifier.family || 'deepseek', authorFamily: author.declared || '', selected, results: [] };
   if (!/^[0-9a-f]{40}$/.test(String(inputs.headSha || ''))) {
     return { ...base, status: 'FAIL', reason: 'bad_arguments', note: 'the head sha is not a 40 character commit sha' };
   }
@@ -400,6 +400,7 @@ export async function runVerification(inputs, deps = {}) {
     status: decision.status,
     reason: decision.reason,
     modelFamily: answer.modelFamily || plan.modelFamily,
+    authorFamily: base.authorFamily,
     selected,
     results: validated.results,
     note: notes,
@@ -472,7 +473,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
   const result = {
     ...outcome,
     headSha: options.headSha,
-    modelFamily: outcome.modelFamily || 'claude',
+    modelFamily: outcome.modelFamily || 'deepseek',
     results: (outcome.results || []).map(entry => ({
       ...entry,
       parent_result: redactSecrets(entry.parent_result, inputs.env),
@@ -481,7 +482,7 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     })),
     note: redactSecrets(outcome.note || '', inputs.env),
   };
-  const comment = redactSecrets(formatComment({ status: result.status, headSha: options.headSha, results: result.results || [], modelFamily: result.modelFamily, reason: result.reason, note: result.note }), inputs.env);
+  const comment = redactSecrets(formatComment({ status: result.status, headSha: options.headSha, results: result.results || [], modelFamily: result.modelFamily, authorFamily: result.authorFamily || '', reason: result.reason, note: result.note }), inputs.env);
   if (options.commentOut) writeFileSync(options.commentOut, comment);
   if (options.summaryOut) writeFileSync(options.summaryOut, redactSecrets(summaryBlock(result, deps.extraSummary || ''), inputs.env));
   process.stdout.write(`${comment}\n`);

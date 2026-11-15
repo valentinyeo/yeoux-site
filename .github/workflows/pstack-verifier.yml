@@ -150,7 +150,6 @@ jobs:
 
       - name: Run the pstack verifier
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           PI_VERSION: '1.5.2'
           GH_TOKEN: ${{ github.token }}
@@ -160,9 +159,7 @@ jobs:
           PSTACK_SCRATCH: ${{ github.workspace }}/scratch
         run: |
           mkdir -p scratch agent-bin
-          if grep -Eqi '^[[:space:]]*author-model[[:space:]]*:[[:space:]]*(claude|openai|grok)[[:space:]]*$' pr-body.txt; then
-            npm install -g "@earendil-works/pi-coding-agent@$PI_VERSION"
-          fi
+          npm install -g "@earendil-works/pi-coding-agent@$PI_VERSION"
           ln -sf "$(command -v node)" agent-bin/node
           if command -v pi > /dev/null; then ln -sf "$(command -v pi)" agent-bin/pi; fi
           echo "PSTACK_AGENT_PATH=$PWD/agent-bin" >> "$GITHUB_ENV"

@@ -63,14 +63,14 @@ function inputs(overrides = {}) {
     featureMapText,
     driveTool: '/tmp/pstack/parent/verifier/drive.mjs',
     scratch: '/tmp/pstack/scratch',
-    env: { CLAUDE_CODE_OAUTH_TOKEN: login },
+    env: { OPENCODE_API_KEY: login },
     parentAppUp: true,
     headAppUp: true,
     ...overrides,
   };
 }
 
-function fakeAgent(text, modelFamily = 'claude') {
+function fakeAgent(text, modelFamily = 'deepseek') {
   const calls = [];
   const agent = async call => {
     calls.push(call);
@@ -132,41 +132,51 @@ test('the author-model line is read as a raw declaration, including grok', () =>
   assert.deepEqual(parseAuthorModel('author-model: gemini'), { declared: 'gemini' });
 });
 
-test('a claude author gets a deepseek verifier', () => {
+test('a claude author is verified by deepseek', () => {
   assert.deepEqual(verifierFamilyFor('claude'), { family: 'deepseek' });
 });
 
-test('an openai author gets a deepseek verifier', () => {
+test('an openai author is verified by deepseek', () => {
   assert.deepEqual(verifierFamilyFor('openai'), { family: 'deepseek' });
 });
 
-test('a grok author gets a deepseek verifier', () => {
+test('a grok author is verified by deepseek', () => {
   assert.deepEqual(verifierFamilyFor('grok'), { family: 'deepseek' });
 });
 
-test('a deepseek author gets a claude verifier', () => {
-  assert.deepEqual(verifierFamilyFor('deepseek'), { family: 'claude' });
+test('a deepseek author is verified by deepseek', () => {
+  assert.deepEqual(verifierFamilyFor('deepseek'), { family: 'deepseek' });
+  assert.deepEqual(verifierFamilyFor('DeepSeek '), { family: 'deepseek' });
 });
 
-test('a missing author-model line gets a claude verifier', () => {
-  assert.deepEqual(verifierFamilyFor(null), { family: 'claude' });
-  assert.deepEqual(verifierFamilyFor(undefined), { family: 'claude' });
-  assert.deepEqual(verifierFamilyFor(''), { family: 'claude' });
-  assert.deepEqual(verifierFamilyFor(parseAuthorModel('no line here').declared), { family: 'claude' });
+test('a missing author-model line is verified by deepseek', () => {
+  assert.deepEqual(verifierFamilyFor(null), { family: 'deepseek' });
+  assert.deepEqual(verifierFamilyFor(undefined), { family: 'deepseek' });
+  assert.deepEqual(verifierFamilyFor(''), { family: 'deepseek' });
+  assert.deepEqual(verifierFamilyFor(parseAuthorModel('no line here').declared), { family: 'deepseek' });
 });
 
 test('an unknown author-model value fails closed as unknown_author_model', () => {
-  const unknown = verifierFamilyFor('gemini');
-  assert.equal(unknown.errorClass, 'unknown_author_model');
-  assert.match(unknown.detail, /must be one of claude, openai, grok, deepseek/);
-  assert.equal(verifierFamilyFor('DeepSeek ').family, 'claude');
+  for (const value of ['gemini', 'mistral', 'claude-sonnet']) {
+    const unknown = verifierFamilyFor(value);
+    assert.equal(unknown.errorClass, 'unknown_author_model');
+    assert.equal(unknown.family, undefined);
+    assert.match(unknown.detail, /must be one of claude, openai, grok, deepseek/);
+  }
 });
 
-test('the verifier family is never the author family', () => {
-  for (const author of ['claude', 'openai', 'grok', 'deepseek']) {
-    assert.notEqual(verifierFamilyFor(author).family, author, `${author} verified itself`);
-  }
-  assert.equal(verifierFamilyFor(null).family, 'claude', 'a missing line is treated as a deepseek author, whose verifier is claude');
+test('the comment says so in one plain line when the author and verifier families match', async () => {
+  const line = 'Same family: the author and the verifier are both deepseek (owner\'s decision, 2026-11-15).';
+  const agent = fakeAgent(answer(selectedRows().map(entry => row(entry.feature))));
+  const outcome = await runVerification(inputs(), { callAgent: agent.agent });
+  assert.equal(outcome.authorFamily, 'deepseek');
+  const comment = formatComment({ status: outcome.status, headSha, results: outcome.results, modelFamily: outcome.modelFamily, authorFamily: outcome.authorFamily });
+  assert.equal(comment.split('\n').filter(entry => entry.startsWith('Same family:')).length, 1);
+  assert.ok(comment.includes(line));
+  const claudeAuthor = formatComment({ status: 'PASS', headSha, results: [row('Reports index')], modelFamily: 'deepseek', authorFamily: 'claude' });
+  assert.ok(!claudeAuthor.includes('Same family:'));
+  const unknownAuthor = formatComment({ status: 'PASS', headSha, results: [row('Reports index')], modelFamily: 'deepseek', authorFamily: '' });
+  assert.ok(!unknownAuthor.includes('Same family:'));
 });
 
 test('the verdict function covers every case in the contract', () => {
@@ -201,7 +211,7 @@ test('every fail closed class stops the run with its own reason', async () => {
   const rows = selectedRows().map(entry => entry.feature);
   const cases = [
     ['missing_login', inputs({ env: {} }), fakeAgent(answer([row(rows[0])])).agent],
-    ['missing_login', inputs({ prBody: 'author-model: claude\n', env: { CLAUDE_CODE_OAUTH_TOKEN: login } }), fakeAgent(answer([row(rows[0])])).agent],
+    ['missing_login', inputs({ env: { CLAUDE_CODE_OAUTH_TOKEN: login } }), fakeAgent(answer([row(rows[0])])).agent],
     ['cli_error', inputs(), async () => ({ errorClass: 'cli_error', detail: 'the claude command exited with 2' })],
     ['timeout', inputs(), async () => ({ errorClass: 'timeout', detail: 'no answer in time' })],
     ['empty_answer', inputs(), fakeAgent('').agent],
@@ -291,7 +301,7 @@ test('the login value never reaches the comment, the summary or stdout', async (
   writeFileSync(path.join(dir, 'body.txt'), 'author-model: deepseek');
   writeFileSync(path.join(dir, 'diff.txt'), 'diff');
   const previous = process.env;
-  process.env = { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: login };
+  process.env = { ...process.env, OPENCODE_API_KEY: login };
   const { main } = await import('../verifier/verify.mjs');
   const writes = [];
   const write = process.stdout.write.bind(process.stdout);
@@ -329,13 +339,20 @@ test('the agent command is fenced to the drive tool and the two checkouts', () =
 });
 
 test('the agent call refuses to run without the login variable for its family', async () => {
-  const claudeVerifier = await callAgent({ prompt: 'x', family: verifierFamilyFor('deepseek').family, env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
-  assert.equal(claudeVerifier.errorClass, 'missing_login');
-  assert.match(claudeVerifier.detail, /CLAUDE_CODE_OAUTH_TOKEN/);
-  const deepseekVerifier = await callAgent({ prompt: 'x', family: verifierFamilyFor('claude').family, env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
+  const deepseekVerifier = await callAgent({ prompt: 'x', family: verifierFamilyFor('deepseek').family, env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
   assert.equal(deepseekVerifier.errorClass, 'missing_login');
   assert.match(deepseekVerifier.detail, /OPENCODE_API_KEY/);
-  assert.ok(!deepseekVerifier.detail.includes(login));
+  const claudeVerifier = await callAgent({ prompt: 'x', family: 'claude', env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
+  assert.equal(claudeVerifier.errorClass, 'missing_login');
+  assert.match(claudeVerifier.detail, /CLAUDE_CODE_OAUTH_TOKEN/);
+  assert.ok(!claudeVerifier.detail.includes(login));
+});
+
+test('a DeepSeek run does not need a Claude login', async () => {
+  const agent = fakeAgent(answer(selectedRows().map(entry => row(entry.feature))));
+  const outcome = await runVerification(inputs({ env: { OPENCODE_API_KEY: login } }), { callAgent: agent.agent });
+  assert.notEqual(outcome.reason, 'missing_login');
+  assert.equal(outcome.modelFamily, 'deepseek');
 });
 
 test('the DeepSeek verifier names the Pi build, the opencode-go provider and the flash model', () => {
@@ -441,6 +458,15 @@ test('the workflow installs the pinned Pi package in the agent step and gives on
   assert.ok(agentStep.includes('npm install -g'), 'the install lives in the agent step');
   assert.ok(workflow.indexOf('npm install -g') > workflow.indexOf('- name: Run the pstack verifier'));
   assert.equal(workflow.split('npm install -g').length - 1, 1, 'the package is installed once');
+});
+
+test('the workflow installs only the CLI that will verify, which is Pi', () => {
+  const workflow = workflowText();
+  assert.doesNotMatch(workflow, /author-model/, 'the install does not branch on the author family any more');
+  assert.doesNotMatch(workflow, /CLAUDE_CODE_OAUTH_TOKEN/, 'no Claude login is needed by a DeepSeek run');
+  assert.doesNotMatch(workflow, /\bclaude\b/i, 'the workflow never installs or runs the Claude CLI');
+  assert.match(workflow, /npm install -g "@earendil-works\/pi-coding-agent@\$PI_VERSION"/, 'Pi is installed by the agent step every time');
+  assert.equal(workflow.split('\n').filter(entry => entry.includes('OPENCODE_API_KEY')).length, 1, 'the DeepSeek login is wired in exactly one place');
 });
 
 test('neither the workflow nor the verifier installs the OpenCode app or names a DeepSeek endpoint', () => {
