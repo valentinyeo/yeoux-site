@@ -10,35 +10,30 @@ Prior attempt: PR https://github.com/valentinyeo/yeoux-site/pull/1 merged. Its c
   CHECK: node tools/gates.mjs g1
   EXPECT: G1 PASS
   EVIDENCE: pending
-ABANDON: G1 needs live yeoux.net with the Yeo UX Access service token from yeo-key; ticket SOFT-2382 forbids credential reads and live calls, so this session cannot run it. Unblock: run node tools/gates.mjs g1 with the vault token.
 - [ ] G2: Independently listed old, new, and index item counts agree
   CHECK: node tools/gates.mjs g2
   EXPECT: G2 PASS
   EVIDENCE: pending
-ABANDON: G2 same live R2 and index counts at yeoux.net with the Yeo UX credentials; forbidden for SOFT-2382. Unblock: run node tools/gates.mjs g2 with the vault token.
 - [ ] G3: Logged-out browsers reach Zero Trust login while the saved service token is admitted
   CHECK: node tools/gates.mjs g3
   EXPECT: G3 PASS
   EVIDENCE: pending
-ABANDON: G3 needs a logged-out browser and the saved Access service token against live yeoux.net; forbidden for SOFT-2382. Unblock: run node tools/gates.mjs g3 with the vault token.
 - [ ] G4: Real yeoshare upload appears first on explorations within one minute
   CHECK: node tools/gates.mjs g4
   EXPECT: G4 PASS
   EVIDENCE: pending
-ABANDON: G4 needs a real yeoshare upload to live yeoux.net, another live call this ticket forbids. Unblock: run node tools/gates.mjs g4 with the vault token.
 - [ ] G5: Repository isolation and local secret scan pass, with successful secret-scan CI on the final revision
   CHECK: node tools/no-hypertask.mjs && gitleaks detect --no-banner --source . --redact && gh run view "$(gh run list --commit "$(git rev-parse HEAD)" --workflow Gitleaks --json databaseId,status,conclusion --jq '.[0] | select(.status == "completed" and .conclusion == "success") | .databaseId')" --json conclusion,headSha,jobs --jq 'select(.conclusion == "success" and any(.jobs[]; .name == "secret-scan" and .conclusion == "success")) | "G5 PASS secret-scan " + .headSha'
   EXPECT: G5 PASS
   EVIDENCE: pending
-ABANDON: G5 local half passes (no Hypertask strings, gitleaks no leaks over 64 commits) but the CI half needs a successful secret-scan run, and GitHub starts no jobs on this account while billing is blocked. Unblock: fix billing, rerun this gate.
-- [x] G6: yeoshare reads credentials through yeo-key, with no config credential file
+- [ ] G6: yeoshare reads credentials through yeo-key, with no config credential file
   CHECK: node --test test/yeoshare.test.mjs && printf 'G6 PASS yeoshare credential handling tests\n'
   EXPECT: G6 PASS
-  EVIDENCE: automatic-evidence=v1; definition-sha256=37a4cd6f13a9ff9d5242ad6e17907283765c6ba78c1c01e9e96c3df369ab39e5; exit=0; EXPECT=matched; output-sha256=910c158d75c272b43fabf8cf6e4bce5a0d24ce271cc9a74cf2efd4f987275334; output-bytes=2189; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site-SOFT-2382; path=94bc939aec53/14 entries
-- [x] G7: Both publishing references honestly direct Yeo UX explorations to the live exploration URL
+  EVIDENCE: pending
+- [ ] G7: Both publishing references honestly direct Yeo UX explorations to the live exploration URL
   CHECK: python3 -c "from pathlib import Path; paths=[Path.home()/'.claude/reference/hosting.md',Path.home()/'.claude/skills/doc-artifacts/SKILL.md']; ok=all('https://yeoux.net/explorations' in p.read_text() for p in paths); print(('PASS' if ok else 'FAIL')+' G7: both references name https://yeoux.net/explorations'); raise SystemExit(0 if ok else 1)"
   EXPECT: PASS G7:
-  EVIDENCE: automatic-evidence=v1; definition-sha256=ae553be23445e7a65ecf0493f1992aeba6571868142cb57703c436804cfe4bc2; exit=0; EXPECT=matched; output-sha256=7c4ffef23cf84af0580b368043e7dc03ac80786c96a44df46dbf7302adcf399a; output-bytes=61; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site-SOFT-2382; path=94bc939aec53/14 entries
+  EVIDENCE: pending
 
 ## Operational proof required before completion
 
