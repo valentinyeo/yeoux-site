@@ -10,7 +10,7 @@ export const DEEPSEEK_MODEL = 'deepseek-flash';
 export const DEEPSEEK_KEY_VAR = 'PSTACK_DEEPSEEK_API_KEY';
 export const DEEPSEEK_BASE_URL_VAR = 'PSTACK_DEEPSEEK_BASE_URL';
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
-export const AUTHOR_FAMILIES = ['deepseek', 'claude', 'openai'];
+export const AUTHOR_FAMILIES = ['claude', 'openai', 'grok', 'deepseek'];
 export const VERDICTS = ['ok', 'regression', 'broken_on_both', 'not_drivable'];
 export const SEVERITIES = ['blocker', 'major', 'minor', 'note'];
 export const STATUSES = ['PASS', 'PASS+NOTES', 'FAIL'];
@@ -59,10 +59,18 @@ export function selectFeatures(rows, changedFiles) {
 
 export function parseAuthorModel(prBody) {
   const match = /^\s*author-model\s*:\s*(.+?)\s*$/mi.exec(String(prBody || ''));
-  if (!match) return { family: 'deepseek', declared: null };
-  const value = match[1].toLowerCase();
-  if (!AUTHOR_FAMILIES.includes(value)) return { error: `author-model must be one of ${AUTHOR_FAMILIES.join(', ')}, received ${value}` };
-  return { family: value, declared: value };
+  if (!match) return { declared: null };
+  return { declared: match[1].toLowerCase() };
+}
+
+export function verifierFamilyFor(authorModel) {
+  const declared = authorModel == null ? '' : String(authorModel).trim().toLowerCase();
+  if (!declared || declared === 'deepseek') return { family: 'claude' };
+  if (declared === 'claude' || declared === 'openai' || declared === 'grok') return { family: 'deepseek' };
+  return {
+    errorClass: 'unknown_author_model',
+    detail: `author-model must be one of ${AUTHOR_FAMILIES.join(', ')}, received ${declared}`,
+  };
 }
 
 export function answerIsJson(text) {
@@ -192,8 +200,8 @@ export function buildPrompt({ prNumber, baseSha, headSha, parentUrl, headUrl, ro
   ].join('\n');
 }
 
-export function buildAgentCommand({ family, env = process.env, driveTool, parentDir, headDir, scratch }) {
-  if (family === 'claude') {
+export function buildAgentCommand({ family, env = process.env }) {
+  if (family === 'deepseek') {
     return {
       model: DEEPSEEK_MODEL,
       modelFamily: 'deepseek',
@@ -205,6 +213,7 @@ export function buildAgentCommand({ family, env = process.env, driveTool, parent
       loginVar: DEEPSEEK_KEY_VAR,
     };
   }
+  if (family !== 'claude') throw new Error(`unknown verifier family ${family}`);
   return {
     model: CLAUDE_MODEL,
     modelFamily: 'claude',
@@ -235,7 +244,7 @@ export function agentArgs({ model, driveTool, parentDir, headDir, scratch }) {
 }
 
 export async function callAgent({ prompt, family, env = process.env, driveTool, parentDir, headDir, scratch, timeoutMs = 600000, spawnImpl = spawn }) {
-  const plan = buildAgentCommand({ family, env, driveTool, parentDir, headDir, scratch });
+  const plan = buildAgentCommand({ family, env });
   if (!plan.env[plan.loginVar]) return { errorClass: 'missing_login', detail: `${plan.loginVar} is not set for the ${plan.modelFamily} verifier` };
   const args = agentArgs({ model: plan.model, driveTool, parentDir, headDir, scratch });
   return await new Promise(resolve => {
@@ -299,16 +308,17 @@ export async function runVerification(inputs, deps = {}) {
   const changedFiles = inputs.changedFiles || [];
   const rows = parseFeatureMap(inputs.featureMapText);
   const selected = selectFeatures(rows, changedFiles);
-  const base = { modelFamily: 'claude', selected, results: [] };
+  const headAppUp = inputs.headAppUp !== false;
+  const author = parseAuthorModel(inputs.prBody);
+  const verifier = verifierFamilyFor(author.declared);
+  const base = { modelFamily: verifier.family || 'claude', selected, results: [] };
   if (!/^[0-9a-f]{40}$/.test(String(inputs.headSha || ''))) {
     return { ...base, status: 'FAIL', reason: 'bad_arguments', note: 'the head sha is not a 40 character commit sha' };
   }
-  const headAppUp = inputs.headAppUp !== false;
-  const author = parseAuthorModel(inputs.prBody);
-  if (author.error) return { ...base, status: 'FAIL', reason: 'author_model_unknown', note: author.error };
+  if (verifier.errorClass) return { ...base, status: 'FAIL', reason: verifier.errorClass, note: verifier.detail };
   if (!headAppUp) return { ...base, status: 'FAIL', reason: 'head_app_down', note: 'the head app did not start, so nothing could be driven' };
   if (selected.length === 0) return { ...base, status: 'FAIL', reason: 'no_features', note: 'no feature row matched the changed files' };
-  const plan = buildAgentCommand({ family: author.family, env });
+  const plan = buildAgentCommand({ family: verifier.family, env });
   const login = plan.env[plan.loginVar];
   if (!login) return { ...base, modelFamily: plan.modelFamily, status: 'FAIL', reason: 'missing_login', note: `${plan.loginVar} is not available to this run` };
   const prompt = buildPrompt({
@@ -330,7 +340,7 @@ export async function runVerification(inputs, deps = {}) {
   try {
     answer = await agent({
       prompt,
-      family: author.family,
+      family: verifier.family,
       env,
       driveTool: inputs.driveTool,
       parentDir: inputs.parentDir,

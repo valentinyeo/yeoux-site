@@ -18,6 +18,7 @@ import {
   runVerification,
   selectFeatures,
   validateAnswer,
+  verifierFamilyFor,
 } from '../verifier/verify.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -97,13 +98,51 @@ test('changed paths pick their features and the smoke feature always joins', () 
   assert.equal(new Set(many.map(entry => entry.feature)).size, many.length);
 });
 
-test('author-model line decides the verifier family, unknown values fail closed', () => {
-  assert.deepEqual(parseAuthorModel(''), { family: 'deepseek', declared: null });
-  assert.deepEqual(parseAuthorModel('no line here'), { family: 'deepseek', declared: null });
-  assert.deepEqual(parseAuthorModel('author-model: deepseek'), { family: 'deepseek', declared: 'deepseek' });
-  assert.deepEqual(parseAuthorModel('blah\nAuthor-Model: Claude\nblah'), { family: 'claude', declared: 'claude' });
-  assert.deepEqual(parseAuthorModel('author-model: openai'), { family: 'openai', declared: 'openai' });
-  assert.match(parseAuthorModel('author-model: gemini').error, /author-model must be one of/);
+test('the author-model line is read as a raw declaration, including grok', () => {
+  assert.deepEqual(parseAuthorModel(''), { declared: null });
+  assert.deepEqual(parseAuthorModel('no line here'), { declared: null });
+  assert.deepEqual(parseAuthorModel('author-model: deepseek'), { declared: 'deepseek' });
+  assert.deepEqual(parseAuthorModel('blah\nAuthor-Model: Claude\nblah'), { declared: 'claude' });
+  assert.deepEqual(parseAuthorModel('author-model: openai'), { declared: 'openai' });
+  assert.deepEqual(parseAuthorModel('author-model: grok'), { declared: 'grok' });
+  assert.deepEqual(parseAuthorModel('author-model: gemini'), { declared: 'gemini' });
+});
+
+test('a claude author gets a deepseek verifier', () => {
+  assert.deepEqual(verifierFamilyFor('claude'), { family: 'deepseek' });
+});
+
+test('an openai author gets a deepseek verifier', () => {
+  assert.deepEqual(verifierFamilyFor('openai'), { family: 'deepseek' });
+});
+
+test('a grok author gets a deepseek verifier', () => {
+  assert.deepEqual(verifierFamilyFor('grok'), { family: 'deepseek' });
+});
+
+test('a deepseek author gets a claude verifier', () => {
+  assert.deepEqual(verifierFamilyFor('deepseek'), { family: 'claude' });
+});
+
+test('a missing author-model line gets a claude verifier', () => {
+  assert.deepEqual(verifierFamilyFor(null), { family: 'claude' });
+  assert.deepEqual(verifierFamilyFor(undefined), { family: 'claude' });
+  assert.deepEqual(verifierFamilyFor(''), { family: 'claude' });
+  assert.deepEqual(verifierFamilyFor(parseAuthorModel('no line here').declared), { family: 'claude' });
+});
+
+test('an unknown author-model value fails closed as unknown_author_model', () => {
+  const unknown = verifierFamilyFor('gemini');
+  assert.equal(unknown.errorClass, 'unknown_author_model');
+  assert.match(unknown.detail, /must be one of claude, openai, grok, deepseek/);
+  assert.equal(verifierFamilyFor('DeepSeek ').family, 'claude');
+});
+
+test('the verifier family is never the author family', () => {
+  for (const author of ['claude', 'openai', 'grok', 'deepseek']) {
+    assert.notEqual(verifierFamilyFor(author).family, author, `${author} verified itself`);
+  }
+  assert.equal(verifierFamilyFor(null).family, 'claude', 'a missing line is treated as a deepseek author, whose verifier is claude');
 });
 
 test('the verdict function covers every case in the contract', () => {
@@ -149,7 +188,7 @@ test('every fail closed class stops the run with its own reason', async () => {
     ['empty_answer', inputs(), fakeAgent(JSON.stringify({ features: [] })).agent],
     ['drove_nothing', inputs(), fakeAgent(answer(rows.map(name => row(name, { verdict: 'not_drivable', head_result: '' })))).agent],
     ['head_app_down', inputs({ headAppUp: false }), fakeAgent(answer([row(rows[0])])).agent],
-    ['author_model_unknown', inputs({ prBody: 'author-model: gemini' }), fakeAgent(answer([row(rows[0])])).agent],
+    ['unknown_author_model', inputs({ prBody: 'author-model: gemini' }), fakeAgent(answer([row(rows[0])])).agent],
     ['bad_arguments', inputs({ headSha: 'abc' }), fakeAgent(answer([row(rows[0])])).agent],
     ['no_features', inputs({ featureMapText: 'no table here' }), fakeAgent(answer([row(rows[0])])).agent],
     ['cli_error', inputs(), async () => { throw new Error('boom'); }],
@@ -264,12 +303,12 @@ test('the agent command is fenced to the drive tool and the two checkouts', () =
 });
 
 test('the agent call refuses to run without the login variable for its family', async () => {
-  const missing = await callAgent({ prompt: 'x', family: 'deepseek', env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
-  assert.equal(missing.errorClass, 'missing_login');
-  assert.match(missing.detail, /CLAUDE_CODE_OAUTH_TOKEN/);
-  const claudeAuthor = await callAgent({ prompt: 'x', family: 'claude', env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
-  assert.equal(claudeAuthor.errorClass, 'missing_login');
-  assert.match(claudeAuthor.detail, /PSTACK_DEEPSEEK_API_KEY/);
+  const claudeVerifier = await callAgent({ prompt: 'x', family: verifierFamilyFor('deepseek').family, env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
+  assert.equal(claudeVerifier.errorClass, 'missing_login');
+  assert.match(claudeVerifier.detail, /CLAUDE_CODE_OAUTH_TOKEN/);
+  const deepseekVerifier = await callAgent({ prompt: 'x', family: verifierFamilyFor('claude').family, env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
+  assert.equal(deepseekVerifier.errorClass, 'missing_login');
+  assert.match(deepseekVerifier.detail, /PSTACK_DEEPSEEK_API_KEY/);
 });
 
 test('start-app.sh starts this checkout and the drive tool drives the reports index', async t => {
