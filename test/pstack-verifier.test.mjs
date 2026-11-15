@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -477,4 +477,74 @@ test('start-app.sh starts this checkout and the drive tool drives the reports in
     const pid = readFileSync(path.join(root, '.wrangler/pstack-app.pid'), 'utf8').trim();
     spawnSync('kill', ['--', `-${pid}`], { encoding: 'utf8' });
   }
+});
+
+function workflowText() {
+  return readFileSync(path.join(root, '.github/workflows/pstack-verifier.yml'), 'utf8');
+}
+
+test('the app user works from its own copy of both checkouts, not from the runner home', () => {
+  const workflow = workflowText();
+  assert.match(workflow, /APP_HOME=\/srv\/pstackapp/, 'the app user needs a home the runner home cannot block');
+  assert.match(workflow, /sudo cp -a parent head "\$APP_HOME\/"|sudo cp -a parent head \$APP_HOME\//, 'both checkouts are copied to the app home');
+  assert.match(workflow, /PARENT_DIR=.*\/parent/, 'the install step reads the parent copy from PARENT_DIR');
+  assert.match(workflow, /HEAD_DIR=.*\/head/, 'the install step reads the head copy from HEAD_DIR');
+  assert.match(workflow, /APP_VERIFIER_DIR=.*\/verifier/, 'the app user needs a readable copy of the verifier scripts');
+  assert.match(workflow, /start-app\.sh" "\$PARENT_DIR" 4501/, 'the parent app starts from the copy the app user can reach');
+  assert.match(workflow, /start-app\.sh" "\$HEAD_DIR" 4502/, 'the head app starts from the copy the app user can reach');
+  assert.doesNotMatch(workflow, /npm --prefix (?:parent|head)\b/, 'npm ci from a relative checkout path is what failed on the runner');
+  assert.doesNotMatch(workflow, /start-app\.sh" "\$PWD\/(?:parent|head)"/, 'the start step reads the checkout the app user can reach');
+  assert.doesNotMatch(workflow, /bash "\$VERIFIER_DIR\/start-app\.sh"/, 'the verifier scripts run from the copy, not from the runner home');
+  const handed = workflow.slice(workflow.indexOf('sudo cp -a'), workflow.indexOf('- name: Install, build and start both apps'));
+  assert.match(handed, /sudo -u pstackapp test -r/, 'the step proves the app user can read the copy before it builds');
+});
+
+test('every gh call in every workflow names its repository explicitly', () => {
+  const directory = new URL('../.github/workflows/', import.meta.url);
+  const files = readdirSync(directory).filter(file => /\.ya?ml$/.test(file));
+  let calls = 0;
+  for (const file of files) {
+    for (const line of readFileSync(new URL(file, directory), 'utf8').split('\n')) {
+      if (!/(?:^|[\s|;&(])gh\s/.test(line)) continue;
+      calls++;
+      assert.match(line, /--repo/, `${file}: a gh call outside a checkout must name --repo: ${line.trim()}`);
+    }
+  }
+  assert.ok(calls >= 1, 'no gh call found, so the comment step is gone');
+});
+
+test('a start failure carries the redacted tail of its log into the comment', () => {
+  const workflow = workflowText();
+  const step = workflow.slice(workflow.indexOf('- name: Post one pull request comment'));
+  assert.match(step, /gh pr comment "\$PR_NUMBER" --repo "\$GITHUB_REPOSITORY" --body-file comment\.md/, 'the comment is posted with an explicit repository');
+  assert.match(step, /failure-log\.mjs/, 'the app log tail is redacted by one shared tool');
+  assert.match(step, /comment\.md/, 'the tail is appended to the posted comment');
+});
+
+test('failure-log.mjs keeps the last 20 lines and redacts tokens and the login', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pstack-log-'));
+  const file = path.join(dir, 'app.log');
+  const login = 'deepseek-login-value-that-must-not-print';
+  const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`);
+  lines[27] = 'SHARE_TOKEN=short-token-abc';
+  lines[28] = `token ${login}`;
+  writeFileSync(file, `${lines.join('\n')}\n`);
+  const out = spawnSync('node', ['verifier/failure-log.mjs', file, '20'], { cwd: root, encoding: 'utf8', env: { ...process.env, OPENCODE_API_KEY: login } });
+  assert.equal(out.status, 0, out.stderr);
+  const printed = out.stdout.trimEnd().split('\n');
+  assert.equal(printed.length, 20, 'exactly the last 20 lines are printed');
+  assert.equal(printed[0], 'line 11', 'the newest lines are kept');
+  assert.ok(!out.stdout.includes(login), 'the login value never reaches the comment');
+  assert.ok(!out.stdout.includes('short-token-abc'), 'a token printed by the app never reaches the comment');
+  assert.match(out.stdout, /SHARE_TOKEN=\[redacted\]/);
+});
+
+test('start-app.sh reports why the app did not start and exits non zero', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pstack-start-'));
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'not-an-app', version: '1.0.0' }));
+  const started = spawnSync('bash', ['verifier/start-app.sh', dir, '4598'], { cwd: root, encoding: 'utf8', timeout: 120000 });
+  assert.notEqual(started.status, 0, 'an app that cannot start must fail');
+  assert.match(started.stderr, /start-app: /, 'the failure says what start-app.sh could not do');
+  assert.match(started.stderr, /npm (?:error|ERR)/i, 'the last lines of the app log are printed');
+  assert.ok(started.stderr.trimEnd().split('\n').length <= 30, 'the tail stays short enough for a comment');
 });

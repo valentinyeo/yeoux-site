@@ -78,25 +78,47 @@ jobs:
           fi
           cat bootstrap-note.txt
 
-      - name: Install, build and start both apps without any model login
+      - name: Give the app user its own copy of both checkouts
         run: |
           sudo useradd --create-home --shell /bin/bash pstackapp || true
-          sudo chown -R pstackapp:pstackapp parent head
+          APP_HOME=/srv/pstackapp
+          sudo rm -rf "$APP_HOME"
+          sudo mkdir -p "$APP_HOME"
+          sudo cp -a parent head "$APP_HOME/"
+          sudo chown -R pstackapp:pstackapp "$APP_HOME"
+          sudo chmod 755 "$APP_HOME"
+          sudo cp -a "$VERIFIER_DIR" "$APP_HOME/verifier"
+          sudo chown -R pstackapp:pstackapp "$APP_HOME/verifier"
+          echo "APP_HOME=$APP_HOME" >> "$GITHUB_ENV"
+          echo "PARENT_DIR=$APP_HOME/parent" >> "$GITHUB_ENV"
+          echo "HEAD_DIR=$APP_HOME/head" >> "$GITHUB_ENV"
+          echo "APP_VERIFIER_DIR=$APP_HOME/verifier" >> "$GITHUB_ENV"
+          for file in "$APP_HOME/parent/package-lock.json" "$APP_HOME/head/package-lock.json" "$APP_VERIFIER_DIR/start-app.sh"; do
+            if ! sudo -u pstackapp test -r "$file"; then
+              echo "the app user cannot read $file, so its app could not start" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install, build and start both apps without any model login
+        run: |
           app_run() {
             sudo -u pstackapp env -i HOME=/home/pstackapp PATH="$PATH" CI=1 "$@"
           }
           echo "HEAD_APP=down" >> "$GITHUB_ENV"
           echo "PARENT_APP=down" >> "$GITHUB_ENV"
           : > app-note.txt
-          if ! app_run npm --prefix parent ci --no-audit --no-fund; then echo "the base checkout did not install" >> app-note.txt; fi
-          if ! app_run npm --prefix head ci --no-audit --no-fund; then echo "the head checkout did not install" >> app-note.txt; fi
-          if app_run npm --prefix parent run build > parent-build.log 2>&1; then echo "base build ok"; else echo "the base checkout did not build" >> app-note.txt; fi
-          if app_run npm --prefix head run build > head-build.log 2>&1; then echo "head build ok"; else
-            echo "the head checkout did not build" >> app-note.txt
+          if ! app_run npm --prefix "$PARENT_DIR" ci --no-audit --no-fund > parent-install.log 2>&1; then echo "the base copy did not install" >> app-note.txt; fi
+          if ! app_run npm --prefix "$HEAD_DIR" ci --no-audit --no-fund > head-install.log 2>&1; then echo "the head copy did not install" >> app-note.txt; fi
+          if app_run npm --prefix "$PARENT_DIR" run build > parent-build.log 2>&1; then echo "base build ok"; else echo "the base copy did not build" >> app-note.txt; fi
+          if app_run npm --prefix "$HEAD_DIR" run build > head-build.log 2>&1; then echo "head build ok"; else
+            echo "the head copy did not build" >> app-note.txt
             echo "HEAD_APP=down" >> "$GITHUB_ENV"
           fi
-          parent_url=$(app_run bash "$VERIFIER_DIR/start-app.sh" "$PWD/parent" 4501 2> parent-app.log | tail -1 || true)
-          head_url=$(app_run bash "$VERIFIER_DIR/start-app.sh" "$PWD/head" 4502 2> head-app.log | tail -1 || true)
+          if [ -d "$PARENT_DIR/node_modules" ]; then rm -rf parent/node_modules; ln -sfn "$PARENT_DIR/node_modules" parent/node_modules; fi
+          if [ -d "$HEAD_DIR/node_modules" ]; then rm -rf head/node_modules; ln -sfn "$HEAD_DIR/node_modules" head/node_modules; fi
+          parent_url=$(app_run bash "$APP_VERIFIER_DIR/start-app.sh" "$PARENT_DIR" 4501 2> parent-app.log | tail -1 || true)
+          head_url=$(app_run bash "$APP_VERIFIER_DIR/start-app.sh" "$HEAD_DIR" 4502 2> head-app.log | tail -1 || true)
           if [ -n "$parent_url" ]; then
             echo "PARENT_APP=up" >> "$GITHUB_ENV"
             echo "PARENT_URL=$parent_url" >> "$GITHUB_ENV"
@@ -110,6 +132,14 @@ jobs:
             echo "the head app did not start" >> app-note.txt
           fi
           cat app-note.txt 2>/dev/null || true
+          if [ -s app-note.txt ]; then
+            for log in parent-install.log head-install.log parent-build.log head-build.log parent-app.log head-app.log; do
+              if [ -s "$log" ]; then
+                echo "--- $log, last 20 lines"
+                node "$VERIFIER_DIR/failure-log.mjs" "$log" 20 || tail -20 "$log" || true
+              fi
+            done
+          fi
 
       - name: Install the browser the drive tool uses
         run: |
@@ -179,13 +209,29 @@ jobs:
           if [ ! -s comment.md ]; then
             printf 'pstack-verifier: FAIL @ %s\n\nReason: the verifier produced no comment file\n' "$HEAD_SHA" > comment.md
           fi
-          gh pr comment "$PR_NUMBER" --body-file comment.md
+          if [ "${HEAD_APP:-down}" != "up" ] || [ "${PARENT_APP:-down}" != "up" ]; then
+            {
+              printf '\n### Why an app did not start\n\n'
+              for log in parent-install.log head-install.log parent-build.log head-build.log parent-app.log head-app.log; do
+                if [ -s "$log" ]; then
+                  printf 'Last 20 lines of `%s`:\n\n```\n' "$log"
+                  if [ -f "$VERIFIER_DIR/failure-log.mjs" ]; then
+                    node "$VERIFIER_DIR/failure-log.mjs" "$log" 20 || tail -20 "$log" || true
+                  else
+                    tail -20 "$log" || true
+                  fi
+                  printf '```\n\n'
+                fi
+              done
+            } >> comment.md
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file comment.md
 
       - name: Stop both apps
         if: always()
         run: |
-          for dir in parent head; do
-            if [ -f "$dir/.wrangler/pstack-app.pid" ]; then
+          for dir in "${PARENT_DIR:-}" "${HEAD_DIR:-}"; do
+            if [ -n "$dir" ] && [ -f "$dir/.wrangler/pstack-app.pid" ]; then
               sudo kill -- "-$(cat "$dir/.wrangler/pstack-app.pid")" 2>/dev/null || true
             fi
           done
