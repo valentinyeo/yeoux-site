@@ -26,14 +26,14 @@ Prior attempt: PR https://github.com/valentinyeo/yeoux-site/pull/1 merged. Its c
   CHECK: node tools/no-hypertask.mjs && gitleaks detect --no-banner --source . --redact && gh run view "$(gh run list --commit "$(git rev-parse HEAD)" --workflow Gitleaks --json databaseId,status,conclusion --jq '.[0] | select(.status == "completed" and .conclusion == "success") | .databaseId')" --json conclusion,headSha,jobs --jq 'select(.conclusion == "success" and any(.jobs[]; .name == "secret-scan" and .conclusion == "success")) | "G5 PASS secret-scan " + .headSha'
   EXPECT: G5 PASS
   EVIDENCE: pending
-- [ ] G6: yeoshare reads credentials through yeo-key, with no config credential file
+- [x] G6: yeoshare reads credentials through yeo-key, with no config credential file
   CHECK: node --test test/yeoshare.test.mjs && printf 'G6 PASS yeoshare credential handling tests\n'
   EXPECT: G6 PASS
-  EVIDENCE: pending
-- [ ] G7: Both publishing references honestly direct Yeo UX explorations to the live exploration URL
+  EVIDENCE: automatic-evidence=v1; definition-sha256=37a4cd6f13a9ff9d5242ad6e17907283765c6ba78c1c01e9e96c3df369ab39e5; exit=0; EXPECT=matched; output-sha256=910c158d75c272b43fabf8cf6e4bce5a0d24ce271cc9a74cf2efd4f987275334; output-bytes=2189; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site-SOFT-2382; path=94bc939aec53/14 entries
+- [x] G7: Both publishing references honestly direct Yeo UX explorations to the live exploration URL
   CHECK: python3 -c "from pathlib import Path; paths=[Path.home()/'.claude/reference/hosting.md',Path.home()/'.claude/skills/doc-artifacts/SKILL.md']; ok=all('https://yeoux.net/explorations' in p.read_text() for p in paths); print(('PASS' if ok else 'FAIL')+' G7: both references name https://yeoux.net/explorations'); raise SystemExit(0 if ok else 1)"
   EXPECT: PASS G7:
-  EVIDENCE: pending
+  EVIDENCE: automatic-evidence=v1; definition-sha256=ae553be23445e7a65ecf0493f1992aeba6571868142cb57703c436804cfe4bc2; exit=0; EXPECT=matched; output-sha256=7c4ffef23cf84af0580b368043e7dc03ac80786c96a44df46dbf7302adcf399a; output-bytes=61; shell=/bin/sh; cwd=/home/valentin/projects/yeoux-site-SOFT-2382; path=94bc939aec53/14 entries
 
 ## Operational proof required before completion
 
