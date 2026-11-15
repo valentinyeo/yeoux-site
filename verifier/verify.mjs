@@ -6,10 +6,20 @@ import { fileURLToPath } from 'node:url';
 
 export const CLAUDE_MODEL = 'claude-opus-5-5';
 export const CLAUDE_LOGIN_VAR = 'CLAUDE_CODE_OAUTH_TOKEN';
-export const DEEPSEEK_MODEL = 'deepseek-flash';
-export const DEEPSEEK_KEY_VAR = 'PSTACK_DEEPSEEK_API_KEY';
-export const DEEPSEEK_BASE_URL_VAR = 'PSTACK_DEEPSEEK_BASE_URL';
-export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic';
+export const CLAUDE_BIN = 'claude';
+export const DEEPSEEK_BIN = 'pi';
+export const DEEPSEEK_PROVIDER = 'opencode-go';
+export const DEEPSEEK_MODEL = 'deepseek-v4.1-flash';
+export const DEEPSEEK_LOGIN_VAR = 'OPENCODE_API_KEY';
+export const PI_TOOLS = 'read,bash';
+export const PI_THINKING = 'minimal';
+export const PI_AGENT_PATH_VAR = 'PSTACK_AGENT_PATH';
+export const PI_UNPROVEN = [
+  'the opencode-go login through OPENCODE_API_KEY reaching Pi inside GitHub Actions',
+  'deepseek-v4.1-flash accepting --thinking minimal',
+  'Pi honouring --tools read,bash and --no-approve on the pinned version',
+  'Pi reading the answer through print mode without a JSON envelope',
+];
 export const AUTHOR_FAMILIES = ['claude', 'openai', 'grok', 'deepseek'];
 export const VERDICTS = ['ok', 'regression', 'broken_on_both', 'not_drivable'];
 export const SEVERITIES = ['blocker', 'major', 'minor', 'note'];
@@ -203,23 +213,41 @@ export function buildPrompt({ prNumber, baseSha, headSha, parentUrl, headUrl, ro
 export function buildAgentCommand({ family, env = process.env }) {
   if (family === 'deepseek') {
     return {
+      bin: DEEPSEEK_BIN,
       model: DEEPSEEK_MODEL,
+      provider: DEEPSEEK_PROVIDER,
       modelFamily: 'deepseek',
-      env: {
-        ANTHROPIC_BASE_URL: env[DEEPSEEK_BASE_URL_VAR] || DEEPSEEK_BASE_URL,
-        ANTHROPIC_AUTH_TOKEN: env[DEEPSEEK_KEY_VAR] || '',
-        ANTHROPIC_MODEL: DEEPSEEK_MODEL,
-      },
-      loginVar: DEEPSEEK_KEY_VAR,
+      output: 'text',
+      env: { [DEEPSEEK_LOGIN_VAR]: env[DEEPSEEK_LOGIN_VAR] || '' },
+      loginVar: DEEPSEEK_LOGIN_VAR,
     };
   }
   if (family !== 'claude') throw new Error(`unknown verifier family ${family}`);
   return {
+    bin: CLAUDE_BIN,
     model: CLAUDE_MODEL,
     modelFamily: 'claude',
+    output: 'envelope',
     env: { CLAUDE_CODE_OAUTH_TOKEN: env[CLAUDE_LOGIN_VAR] || '' },
     loginVar: CLAUDE_LOGIN_VAR,
   };
+}
+
+export function piAgentArgs({ model, provider, scratch }) {
+  return [
+    '-p',
+    '--provider', provider,
+    '--model', model,
+    '--thinking', PI_THINKING,
+    '--tools', PI_TOOLS,
+    '--no-approve',
+    '--no-extensions',
+    '--no-skills',
+    '--no-prompt-templates',
+    '--no-context-files',
+    '--no-mcp',
+    '--session-dir', path.join(scratch, 'pi-sessions'),
+  ];
 }
 
 export function agentArgs({ model, driveTool, parentDir, headDir, scratch }) {
@@ -246,7 +274,11 @@ export function agentArgs({ model, driveTool, parentDir, headDir, scratch }) {
 export async function callAgent({ prompt, family, env = process.env, driveTool, parentDir, headDir, scratch, timeoutMs = 600000, spawnImpl = spawn }) {
   const plan = buildAgentCommand({ family, env });
   if (!plan.env[plan.loginVar]) return { errorClass: 'missing_login', detail: `${plan.loginVar} is not set for the ${plan.modelFamily} verifier` };
-  const args = agentArgs({ model: plan.model, driveTool, parentDir, headDir, scratch });
+  const args = plan.output === 'text'
+    ? piAgentArgs({ model: plan.model, provider: plan.provider, scratch })
+    : agentArgs({ model: plan.model, driveTool, parentDir, headDir, scratch });
+  const childEnv = { ...env, ...plan.env };
+  if (plan.output === 'text' && env[PI_AGENT_PATH_VAR]) childEnv.PATH = env[PI_AGENT_PATH_VAR];
   return await new Promise(resolve => {
     let stdout = '';
     let stderr = '';
@@ -259,9 +291,9 @@ export async function callAgent({ prompt, family, env = process.env, driveTool, 
     };
     let child;
     try {
-      child = spawnImpl('claude', args, { cwd: scratch, env: { ...env, ...plan.env }, stdio: ['pipe', 'pipe', 'pipe'] });
+      child = spawnImpl(plan.bin, args, { cwd: scratch, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch {
-      resolve({ errorClass: 'cli_error', detail: 'the claude command did not start' });
+      resolve({ errorClass: 'cli_error', detail: `the ${plan.bin} command did not start` });
       return;
     }
     const timer = setTimeout(() => {
@@ -271,10 +303,14 @@ export async function callAgent({ prompt, family, env = process.env, driveTool, 
     child.stdin.on('error', () => {});
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', () => finish({ errorClass: 'cli_error', detail: 'the claude command did not start' }));
+    child.on('error', () => finish({ errorClass: 'cli_error', detail: `the ${plan.bin} command did not start` }));
     child.on('close', code => {
       if (code !== 0) {
-        finish({ errorClass: 'cli_error', detail: `the claude command exited with ${code}${stderr ? `: ${stderr.slice(-400).trim()}` : ''}` });
+        finish({ errorClass: 'cli_error', detail: `the ${plan.bin} command exited with ${code}${stderr ? `: ${stderr.slice(-400).trim()}` : ''}` });
+        return;
+      }
+      if (plan.output === 'text') {
+        finish({ text: stdout.trim(), modelFamily: plan.modelFamily, model: plan.model });
         return;
       }
       let envelope;
@@ -372,7 +408,7 @@ export async function runVerification(inputs, deps = {}) {
 
 export function redactSecrets(text, env = process.env) {
   let out = String(text);
-  for (const name of [CLAUDE_LOGIN_VAR, DEEPSEEK_KEY_VAR]) {
+  for (const name of [CLAUDE_LOGIN_VAR, DEEPSEEK_LOGIN_VAR]) {
     const value = env[name];
     if (typeof value === 'string' && value.length >= 8) out = out.split(value).join('[redacted]');
   }

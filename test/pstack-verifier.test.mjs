@@ -6,7 +6,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
+  DEEPSEEK_BIN,
+  DEEPSEEK_LOGIN_VAR,
+  DEEPSEEK_MODEL,
+  DEEPSEEK_PROVIDER,
+  PI_THINKING,
+  PI_UNPROVEN,
   agentArgs,
+  buildAgentCommand,
   buildPrompt,
   callAgent,
   decideVerdict,
@@ -14,6 +21,7 @@ import {
   formatComment,
   parseAuthorModel,
   parseFeatureMap,
+  piAgentArgs,
   redactSecrets,
   runVerification,
   selectFeatures,
@@ -69,6 +77,22 @@ function fakeAgent(text, modelFamily = 'claude') {
     return { text, modelFamily };
   };
   return { agent, calls };
+}
+
+function fakeSpawn({ stdoutText = '', stderrText = '', code = 0 } = {}) {
+  const calls = [];
+  const spawnImpl = (bin, args, options) => {
+    const call = { bin, args, options, stdin: '' };
+    calls.push(call);
+    return {
+      killed: false,
+      stdin: { on() {}, end(value) { call.stdin += String(value ?? ''); } },
+      stdout: { on(event, fn) { if (event === 'data' && stdoutText) setTimeout(() => fn(stdoutText), 0); } },
+      stderr: { on(event, fn) { if (event === 'data' && stderrText) setTimeout(() => fn(stderrText), 0); } },
+      on(event, fn) { if (event === 'close') setTimeout(() => fn(code), 5); },
+    };
+  };
+  return { spawnImpl, calls };
 }
 
 test('the feature map parses into rows with paths and one smoke row', () => {
@@ -177,6 +201,7 @@ test('every fail closed class stops the run with its own reason', async () => {
   const rows = selectedRows().map(entry => entry.feature);
   const cases = [
     ['missing_login', inputs({ env: {} }), fakeAgent(answer([row(rows[0])])).agent],
+    ['missing_login', inputs({ prBody: 'author-model: claude\n', env: { CLAUDE_CODE_OAUTH_TOKEN: login } }), fakeAgent(answer([row(rows[0])])).agent],
     ['cli_error', inputs(), async () => ({ errorClass: 'cli_error', detail: 'the claude command exited with 2' })],
     ['timeout', inputs(), async () => ({ errorClass: 'timeout', detail: 'no answer in time' })],
     ['empty_answer', inputs(), fakeAgent('').agent],
@@ -284,6 +309,7 @@ test('the login value never reaches the comment, the summary or stdout', async (
   assert.match(comment, /\[redacted\]/);
   assert.equal(outcome.status, 'PASS+NOTES');
   assert.equal(redactSecrets(login, { CLAUDE_CODE_OAUTH_TOKEN: login }), '[redacted]');
+  assert.equal(redactSecrets(`x ${login} y`, { OPENCODE_API_KEY: login }), 'x [redacted] y');
 });
 
 test('the agent command is fenced to the drive tool and the two checkouts', () => {
@@ -308,7 +334,123 @@ test('the agent call refuses to run without the login variable for its family', 
   assert.match(claudeVerifier.detail, /CLAUDE_CODE_OAUTH_TOKEN/);
   const deepseekVerifier = await callAgent({ prompt: 'x', family: verifierFamilyFor('claude').family, env: {}, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/' });
   assert.equal(deepseekVerifier.errorClass, 'missing_login');
-  assert.match(deepseekVerifier.detail, /PSTACK_DEEPSEEK_API_KEY/);
+  assert.match(deepseekVerifier.detail, /OPENCODE_API_KEY/);
+  assert.ok(!deepseekVerifier.detail.includes(login));
+});
+
+test('the DeepSeek verifier names the Pi build, the opencode-go provider and the flash model', () => {
+  assert.equal(DEEPSEEK_BIN, 'pi');
+  assert.equal(DEEPSEEK_PROVIDER, 'opencode-go');
+  assert.equal(DEEPSEEK_MODEL, 'deepseek-v4.1-flash');
+  assert.equal(DEEPSEEK_LOGIN_VAR, 'OPENCODE_API_KEY');
+  assert.ok(!/pro/i.test(DEEPSEEK_MODEL), 'the DeepSeek verifier must never run a Pro model');
+  const plan = buildAgentCommand({ family: 'deepseek', env: { OPENCODE_API_KEY: login } });
+  assert.equal(plan.bin, 'pi');
+  assert.equal(plan.provider, 'opencode-go');
+  assert.equal(plan.model, 'deepseek-v4.1-flash');
+  assert.equal(plan.modelFamily, 'deepseek');
+  assert.equal(plan.loginVar, 'OPENCODE_API_KEY');
+  assert.deepEqual(plan.env, { OPENCODE_API_KEY: login });
+  assert.ok(Array.isArray(PI_UNPROVEN) && PI_UNPROVEN.length >= 1, 'the unproven parts are listed in one constant');
+  for (const item of PI_UNPROVEN) assert.equal(typeof item, 'string');
+});
+
+test('the deepseek family builds exactly the Pi print-mode command line', () => {
+  const args = piAgentArgs({ model: DEEPSEEK_MODEL, provider: DEEPSEEK_PROVIDER, scratch: '/w/scratch' });
+  assert.deepEqual(args, [
+    '-p',
+    '--provider', 'opencode-go',
+    '--model', 'deepseek-v4.1-flash',
+    '--thinking', PI_THINKING,
+    '--tools', 'read,bash',
+    '--no-approve',
+    '--no-extensions',
+    '--no-skills',
+    '--no-prompt-templates',
+    '--no-context-files',
+    '--no-mcp',
+    '--session-dir', '/w/scratch/pi-sessions',
+  ]);
+  assert.equal(args[0], '-p');
+  assert.equal(args[1], '--provider');
+  assert.equal(args[2], 'opencode-go');
+  assert.equal(args[3], '--model');
+  assert.equal(args[4], 'deepseek-v4.1-flash');
+  assert.ok(!/deepseek[a-z0-9.-]*pro/i.test(args.join(' ')), 'the deepseek command line must never name a Pro model');
+  for (const flag of ['--no-tools', '--dangerously-skip-permissions', '--approve']) assert.ok(!args.includes(flag), `${flag} must not be in the deepseek command line`);
+});
+
+test('the DeepSeek agent call pipes the prompt into Pi and reads the answer from stdout', async () => {
+  const fake = fakeSpawn({ stdoutText: '{"features":[]}' });
+  const outcome = await callAgent({
+    prompt: 'drive the app',
+    family: 'deepseek',
+    env: { OPENCODE_API_KEY: login, PSTACK_AGENT_PATH: '/w/scratch/agent-bin' },
+    driveTool: '/w/parent/verifier/drive.mjs',
+    parentDir: '/w/parent',
+    headDir: '/w/head',
+    scratch: '/w/scratch',
+    spawnImpl: fake.spawnImpl,
+  });
+  const call = fake.calls[0];
+  assert.equal(call.bin, 'pi');
+  assert.deepEqual(call.args, piAgentArgs({ model: DEEPSEEK_MODEL, provider: DEEPSEEK_PROVIDER, scratch: '/w/scratch' }));
+  assert.equal(call.stdin, 'drive the app');
+  assert.deepEqual(call.options.stdio, ['pipe', 'pipe', 'pipe']);
+  assert.equal(call.options.env.OPENCODE_API_KEY, login);
+  assert.equal(call.options.env.PATH, '/w/scratch/agent-bin');
+  assert.ok(!JSON.stringify(call.options.env).includes('ANTHROPIC_BASE_URL'));
+  assert.equal(outcome.text, '{"features":[]}');
+  assert.equal(outcome.modelFamily, 'deepseek');
+  assert.equal(outcome.model, 'deepseek-v4.1-flash');
+});
+
+test('the Claude family still spawns the claude CLI and parses its JSON envelope', async () => {
+  const fake = fakeSpawn({ stdoutText: JSON.stringify({ is_error: false, result: '{"features":[]}' }) });
+  const outcome = await callAgent({
+    prompt: 'x',
+    family: 'claude',
+    env: { CLAUDE_CODE_OAUTH_TOKEN: login, PSTACK_AGENT_PATH: '/w/scratch/agent-bin' },
+    driveTool: '/w/parent/verifier/drive.mjs',
+    parentDir: '/w/parent',
+    headDir: '/w/head',
+    scratch: '/w/scratch',
+    spawnImpl: fake.spawnImpl,
+  });
+  const call = fake.calls[0];
+  assert.equal(call.bin, 'claude');
+  assert.deepEqual(call.args, agentArgs({ model: 'claude-opus-5-5', driveTool: '/w/parent/verifier/drive.mjs', parentDir: '/w/parent', headDir: '/w/head', scratch: '/w/scratch' }));
+  assert.equal(call.options.env.PATH, undefined);
+  assert.equal(outcome.text, '{"features":[]}');
+  assert.equal(outcome.modelFamily, 'claude');
+  const broken = fakeSpawn({ stdoutText: 'not json' });
+  const failed = await callAgent({ prompt: 'x', family: 'claude', env: { CLAUDE_CODE_OAUTH_TOKEN: login }, driveTool: '/d', parentDir: '/p', headDir: '/h', scratch: '/s', spawnImpl: broken.spawnImpl });
+  assert.equal(failed.errorClass, 'non_json_answer');
+});
+
+test('the workflow installs the pinned Pi package in the agent step and gives only that step the login', () => {
+  const workflow = readFileSync(path.join(root, '.github/workflows/pstack-verifier.yml'), 'utf8');
+  assert.match(workflow, /npm install -g "@earendil-works\/pi-coding-agent@\$PI_VERSION"/);
+  assert.match(workflow, /PI_VERSION: '\d+\.\d+\.\d+'/);
+  assert.match(workflow, /OPENCODE_API_KEY: \$\{\{ secrets\.OPENCODE_API_KEY \}\}/);
+  assert.match(workflow, /PSTACK_AGENT_PATH=/);
+  const loginLines = workflow.split('\n').filter(line => line.includes('OPENCODE_API_KEY'));
+  assert.equal(loginLines.length, 1, 'the login is wired in exactly one place');
+  assert.ok(!/PSTACK_DEEPSEEK/.test(workflow), 'no DeepSeek endpoint variable is left in the workflow');
+  const agentStep = workflow.slice(workflow.indexOf('- name: Run the pstack verifier'), workflow.indexOf('- name: Write the job summary'));
+  assert.ok(agentStep.includes('npm install -g'), 'the install lives in the agent step');
+  assert.ok(workflow.indexOf('npm install -g') > workflow.indexOf('- name: Run the pstack verifier'));
+  assert.equal(workflow.split('npm install -g').length - 1, 1, 'the package is installed once');
+});
+
+test('neither the workflow nor the verifier installs the OpenCode app or names a DeepSeek endpoint', () => {
+  for (const file of ['.github/workflows/pstack-verifier.yml', 'verifier/verify.mjs', 'README.md']) {
+    const text = readFileSync(path.join(root, file), 'utf8');
+    assert.ok(!/opencode-ai/.test(text), `${file} still installs the OpenCode app`);
+    assert.ok(!/api\.deepseek\.com/i.test(text), `${file} still names the DeepSeek endpoint`);
+    assert.ok(!/ANTHROPIC_BASE_URL|PSTACK_DEEPSEEK_BASE_URL|DEEPSEEK_BASE_URL/.test(text), `${file} still points Anthropic at another endpoint`);
+    assert.ok(!/deepseek-flash\b/.test(text), `${file} still names the old DeepSeek model`);
+  }
 });
 
 test('start-app.sh starts this checkout and the drive tool drives the reports index', async t => {
