@@ -5,6 +5,13 @@ const marker = '<!--ht-theme-v1-->';
 const MAX_BUFFERED_HTML_BYTES = 1024 * 1024;
 const assets = `<script src="/theme/v1/init.js"></script><link rel="stylesheet" href="/theme/v1/theme.css"><link rel="stylesheet" href="/theme/v1/legacy.css"><script src="/theme/v1/theme.js" defer></script>`;
 const attr = (node, name) => node.attrs?.find(attribute => attribute.name === name)?.value;
+const isSiteMenu = node => attr(node, 'data-site-menu') !== undefined;
+const hasSiteMenu = node => (node.childNodes || []).some(child => isSiteMenu(child) || hasSiteMenu(child));
+const dropNavPlaceholders = node => {
+  if (!node.childNodes) return;
+  node.childNodes = node.childNodes.filter(child => attr(child, 'data-site-nav') === undefined || isSiteMenu(child));
+  node.childNodes.forEach(child => { child.parentNode = node; dropNavPlaceholders(child); });
+};
 const supportedCharset = value => !value || /^(?:utf-?8|us-ascii)$/i.test(value.trim());
 const headerCharset = value => /charset\s*=\s*["']?([^;\s"']+)/i.exec(value)?.[1];
 
@@ -16,7 +23,7 @@ export function themeArtifactHtml(source, active = '/explorations', core) {
   if (!body) return null;
   const metas = head.childNodes.filter(node => node.tagName === 'meta');
   if (metas.some(node => !supportedCharset(attr(node, 'charset') || headerCharset(attr(node, 'content') || '')))) return null;
-  if (attr(html, 'data-ht-artifact') !== undefined && body.childNodes.some(node => attr(node, 'data-site-nav') !== undefined)) return source;
+  if (attr(html, 'data-ht-artifact') !== undefined && hasSiteMenu(body)) return source;
 
   const children = body.childNodes;
   for (let index = 0; index < children.length; index++) {
@@ -28,6 +35,7 @@ export function themeArtifactHtml(source, active = '/explorations', core) {
       break;
     }
   }
+  dropNavPlaceholders(body);
   if (attr(html, 'data-ht-artifact') === undefined) html.attrs.push({ name: 'data-ht-artifact', value: '' });
   const viewport = metas.some(node => attr(node, 'name')?.toLowerCase() === 'viewport') ? '' : '<meta name="viewport" content="width=device-width,initial-scale=1">';
   const headNodes = parseFragment(viewport + assets).childNodes;
@@ -44,23 +52,24 @@ export async function withArtifactTheme(response, active, core) {
   const type = response.headers.get('Content-Type') || '';
   if (!/^text\/html(?:\s*;|\s*$)/i.test(type) || !supportedCharset(headerCharset(type))) return response;
   if (Number(response.headers.get('Content-Length')) > MAX_BUFFERED_HTML_BYTES) {
-    let themed = false;
+    let hasAssets = false;
     let viewport = false;
     return new HTMLRewriter()
       .on('html', { element(element) {
-        themed = element.hasAttribute('data-ht-artifact');
-        if (!themed) element.setAttribute('data-ht-artifact', '');
+        if (!element.hasAttribute('data-ht-artifact')) element.setAttribute('data-ht-artifact', '');
       } })
       .on('meta[name="viewport"]', { element() { viewport = true; } })
+      .on('link[href="/theme/v1/theme.css"]', { element() { hasAssets = true; } })
       .on('head', { element(element) {
         element.onEndTag(end => {
-          if (!themed) end.before((viewport ? '' : '<meta name="viewport" content="width=device-width,initial-scale=1">') + assets, { html: true });
+          if (!hasAssets) end.before((viewport ? '' : '<meta name="viewport" content="width=device-width,initial-scale=1">') + assets, { html: true });
         });
       } })
       .on('body', { element(element) {
-        if (!themed) element.prepend(marker + siteNavigation(active, core), { html: true });
+        element.prepend(marker + siteNavigation(active, core), { html: true });
       } })
-      .on('header.ht-site-nav', { element(element) { if (!themed) element.remove(); } })
+      .on('header.ht-site-nav', { element(element) { element.remove(); } })
+      .on('[data-site-nav]', { element(element) { if (!element.hasAttribute('data-site-menu')) element.remove(); } })
       .transform(response);
   }
   const bytes = await response.arrayBuffer();
