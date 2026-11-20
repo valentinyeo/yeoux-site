@@ -46,7 +46,7 @@ async function alarm(env: Env, id: string, silentMs: number): Promise<void> {
   const mins = Math.round(silentMs / 60000);
   const text = `Supervisor heartbeat ${id} silent ${mins} min. The VPS supervisor may be down. Undo: pause fleet-watch timer or fix the host.`;
   await postSlack(env, text);
-  await postEmail(env, `Supervisor silent: ${id}`, text);
+  await postEmail(env, `Supervisor silent: ${id}`, text).catch(() => {});
 }
 
 async function recordHeartbeat(env: Env, id: string): Promise<void> {
@@ -61,10 +61,14 @@ async function checkSilence(env: Env): Promise<void> {
     const raw = await env.FLEET_SUPERVISOR_KV.get(`hb:${id}`);
     const last = raw ? Number(raw) : 0;
     if (!last || now - last < SILENCE_MS) continue;
+    if (id === "drill" && (await env.FLEET_SUPERVISOR_KV.get(`alarm:${id}`))) {
+      await env.FLEET_SUPERVISOR_KV.delete(`hb:${id}`);
+      continue;
+    }
     const alarmAt = await env.FLEET_SUPERVISOR_KV.get(`alarm:${id}`);
-    if (alarmAt && now - Number(alarmAt) < SILENCE_MS) continue;
-    await alarm(env, id, now - last);
+    if (alarmAt && now - Number(alarmAt) < 4 * SILENCE_MS) continue;
     await env.FLEET_SUPERVISOR_KV.put(`alarm:${id}`, String(now));
+    await alarm(env, id, now - last);
   }
 }
 
